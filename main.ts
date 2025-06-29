@@ -7,21 +7,18 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { GammaCorrectionShader } from 'three/examples/jsm/shaders/GammaCorrectionShader.js';
 
-// === Scene Setup ===
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 2, 30);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 document.body.appendChild(renderer.domElement);
 
-// === Controls ===
 const controls = new PointerLockControls(camera, renderer.domElement);
 scene.add(controls.getObject());
 document.body.addEventListener('click', () => controls.lock());
@@ -30,47 +27,74 @@ const keysPressed: Record<string, boolean> = {};
 document.addEventListener('keydown', e => keysPressed[e.code] = true);
 document.addEventListener('keyup', e => keysPressed[e.code] = false);
 
-// === Lighting ===
 scene.add(new THREE.AmbientLight(0x222244, 0.8));
 const moonLight = new THREE.DirectionalLight(0x8888ff, 0.5);
 moonLight.position.set(20, 100, 50);
 moonLight.castShadow = true;
 scene.add(moonLight);
 
-// === Load Map ===
 new GLTFLoader().load('/map.glb', gltf => {
   gltf.scene.castShadow = true;
   gltf.scene.receiveShadow = true;
-
   gltf.scene.traverse(o => {
     if ((o as THREE.Mesh).isMesh) {
       o.castShadow = true;
       o.receiveShadow = true;
     }
+    if ((o as any)) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+    if ((o as THREE.PointLight).isLight) {
+      o.castShadow = true;
+      o.shadow.bias = -0.0009;
+    }
   });
   scene.add(gltf.scene);
 }, undefined, console.error);
 
-// === Animated Model ===
 let mixer: THREE.AnimationMixer;
 let zombie: THREE.Object3D;
 new GLTFLoader().load('/zombie_hazmat.glb', (gltf) => {
   const model = gltf.scene;
-  model.scale.x = 1.5;
-  model.scale.y = 1.5;
-  model.scale.z = 1.5;
-  model.position.y = 0.1;
+  model.scale.set(1.5, 1.5, 1.5);
+  model.position.y = 0.05;
   model.castShadow = true;
+  model.traverse(child => {
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
   model.receiveShadow = true;
-  const animations = gltf.animations;
   mixer = new THREE.AnimationMixer(model);
-  const action = mixer.clipAction(animations[3]);
+  const action = mixer.clipAction(gltf.animations[3]);
   action.play();
+  action.timeScale = 2;
   scene.add(model);
   zombie = model;
 }, undefined, console.error);
 
-// === Rain System ===
+let fpsGun: THREE.Object3D;
+new GLTFLoader().load('/fps_gun_person_view.glb', (gltf) => {
+  fpsGun = gltf.scene;
+  fpsGun.scale.set(0.8, 0.8, 0.8);
+  fpsGun.position.set(0.2, -0.5, -0.3); // Relative to camera
+  fpsGun.castShadow = true;
+  fpsGun.rotation.y = THREE.MathUtils.degToRad(-180);
+  fpsGun.traverse(child => {
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+  camera.add(fpsGun);
+  scene.add(camera);
+
+  // const animations = gltf.animations;
+  // if (animations.length > 0) {
+  //   mixer = new THREE.AnimationMixer(fpsGun);
+  //   const action = mixer.clipAction(animations[0]);
+  //   action.play();
+  // }
+}, undefined, console.error);
+
 const rainCount = 2000;
 const rainGeo = new THREE.PlaneGeometry(0.02, 0.4);
 const rainMat = new THREE.MeshStandardMaterial({
@@ -98,13 +122,11 @@ for (let i = 0; i < rainCount; i++) {
 }
 scene.add(rainGroup);
 
-// === Postprocessing ===
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.5, 0.85));
 composer.addPass(new ShaderPass(GammaCorrectionShader));
 
-// === Resize Handling ===
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -112,7 +134,6 @@ window.addEventListener('resize', () => {
   composer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// === Animation ===
 const clock = new THREE.Clock();
 const direction = new THREE.Vector3();
 const velocity = new THREE.Vector3();
@@ -147,18 +168,10 @@ function moveAZombieTowardCamera() {
   }
 }
 
-const light = new THREE.SpotLight(0xffffff, 100);
-light.position.set(5, 10, 5);
-light.castShadow = true;
-scene.add(light);
-
-
-
 function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
 
-  // Movement
   direction.set(0, 0, 0);
   if (keysPressed['KeyW']) direction.z += 1;
   if (keysPressed['KeyS']) direction.z -= 1;
