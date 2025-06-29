@@ -33,82 +33,68 @@ moonLight.position.set(20, 100, 50);
 moonLight.castShadow = true;
 scene.add(moonLight);
 
-new GLTFLoader().load('/map.glb', gltf => {
-  gltf.scene.castShadow = true;
-  gltf.scene.receiveShadow = true;
+const loader = new GLTFLoader();
+loader.load('/map.glb', gltf => {
   gltf.scene.traverse(o => {
-    if ((o as THREE.Mesh).isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-    }
-    if ((o as any)) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-    }
-    if ((o as THREE.PointLight).isLight) {
-      o.castShadow = true;
-      o.shadow.bias = -0.0009;
-    }
+    o.castShadow = o.receiveShadow = true;
+    if ((o as THREE.PointLight).isLight) (o as THREE.PointLight).shadow.bias = -0.0009;
   });
   scene.add(gltf.scene);
 }, undefined, console.error);
 
 let mixer: THREE.AnimationMixer;
 let zombie: THREE.Object3D;
-new GLTFLoader().load('/zombie_hazmat.glb', (gltf) => {
+loader.load('/zombie_hazmat.glb', gltf => {
   const model = gltf.scene;
   model.scale.set(1.5, 1.5, 1.5);
   model.position.y = 0.05;
-  model.castShadow = true;
-  model.traverse(child => {
-    child.castShadow = true;
-    child.receiveShadow = true;
-  });
-  model.receiveShadow = true;
+  model.traverse(child => child.castShadow = child.receiveShadow = true);
   mixer = new THREE.AnimationMixer(model);
   const action = mixer.clipAction(gltf.animations[3]);
   action.play();
   action.timeScale = 2;
-  scene.add(model);
-  zombie = model;
+  scene.add(zombie = model);
 }, undefined, console.error);
 
 let fpsGun: THREE.Object3D;
-new GLTFLoader().load('/fps_gun_person_view.glb', (gltf) => {
+let gunMixer: THREE.AnimationMixer;
+let gunActions: THREE.AnimationAction[] = [];
+let currentGunAction = -1;
+let shootTimer = 0;
+let reloadTimer = 0;
+
+loader.load('/fps_gun_person_view.glb', gltf => {
   fpsGun = gltf.scene;
   fpsGun.scale.set(0.8, 0.8, 0.8);
-  fpsGun.position.set(0.2, -0.5, -0.3); // Relative to camera
-  fpsGun.castShadow = true;
+  fpsGun.position.set(0.2, -0.5, -0.3);
   fpsGun.rotation.y = THREE.MathUtils.degToRad(-180);
-  fpsGun.traverse(child => {
-    child.castShadow = true;
-    child.receiveShadow = true;
-  });
+  fpsGun.traverse(child => child.castShadow = child.receiveShadow = true);
+  gunMixer = new THREE.AnimationMixer(fpsGun);
+  gunActions = gltf.animations.map(a => gunMixer.clipAction(a));
+  playGunAction(0); // static by default
   camera.add(fpsGun);
   scene.add(camera);
-
-  // const animations = gltf.animations;
-  // if (animations.length > 0) {
-  //   mixer = new THREE.AnimationMixer(fpsGun);
-  //   const action = mixer.clipAction(animations[0]);
-  //   action.play();
-  // }
 }, undefined, console.error);
 
-const rainCount = 2000;
-const rainGeo = new THREE.PlaneGeometry(0.02, 0.4);
-const rainMat = new THREE.MeshStandardMaterial({
-  color: 0xaaaaee,
-  transparent: true,
-  opacity: 0.3,
-  metalness: 0.4,
-  roughness: 0.85,
-  side: THREE.DoubleSide,
-});
-const rainGroup = new THREE.InstancedMesh(rainGeo, rainMat, rainCount);
-const rainPositions: THREE.Vector3[] = [];
-const rainVelocities: number[] = [];
+const aimDot = document.createElement('div');
+aimDot.style.cssText = `position:fixed;top:50%;left:50%;width:8px;height:8px;background:#f00;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:10`;
+document.body.appendChild(aimDot);
 
+const rainCount = 2000;
+const rainGroup = new THREE.InstancedMesh(
+  new THREE.PlaneGeometry(0.02, 0.4),
+  new THREE.MeshStandardMaterial({
+    color: 0xaaaaee,
+    transparent: true,
+    opacity: 0.3,
+    metalness: 0.4,
+    roughness: 0.85,
+    side: THREE.DoubleSide,
+  }),
+  rainCount
+);
+
+const rainPositions: THREE.Vector3[] = [], rainVelocities: number[] = [];
 for (let i = 0; i < rainCount; i++) {
   const pos = new THREE.Vector3(
     THREE.MathUtils.randFloat(-25, 25),
@@ -117,8 +103,7 @@ for (let i = 0; i < rainCount; i++) {
   );
   rainPositions.push(pos);
   rainVelocities.push(THREE.MathUtils.randFloat(0.3, 0.8));
-  const matrix = new THREE.Matrix4().setPosition(pos);
-  rainGroup.setMatrixAt(i, matrix);
+  rainGroup.setMatrixAt(i, new THREE.Matrix4().setPosition(pos));
 }
 scene.add(rainGroup);
 
@@ -139,32 +124,51 @@ const direction = new THREE.Vector3();
 const velocity = new THREE.Vector3();
 const moveSpeed = 10;
 
-function updateRainFixedArea() {
+function playGunAction(index: number) {
+  if (!gunActions.length || index === currentGunAction) return;
+  gunActions.forEach(a => a.stop());
+  gunActions[index].reset().play();
+  currentGunAction = index;
+  if (index === 4) shootTimer = 0.3;
+  if (index === 7) reloadTimer = 1.5;
+}
+
+document.addEventListener('mousedown', e => {
+  if (e.button === 0 && reloadTimer <= 0) playGunAction(4);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'KeyR' && shootTimer <= 0) playGunAction(7);
+});
+
+function isWalking(): boolean {
+  return keysPressed['KeyW'] || keysPressed['KeyA'] || keysPressed['KeyS'] || keysPressed['KeyD'];
+}
+
+function updateRain() {
   for (let i = 0; i < rainCount; i++) {
     const pos = rainPositions[i];
     pos.y -= rainVelocities[i];
     if (pos.y < 0) {
-      pos.y = THREE.MathUtils.randFloat(60, 100);
-      pos.x = THREE.MathUtils.randFloat(-25, 25);
-      pos.z = THREE.MathUtils.randFloat(-25, 25);
+      pos.set(
+        THREE.MathUtils.randFloat(-25, 25),
+        THREE.MathUtils.randFloat(60, 100),
+        THREE.MathUtils.randFloat(-25, 25)
+      );
     }
-    const matrix = new THREE.Matrix4().setPosition(pos);
-    rainGroup.setMatrixAt(i, matrix);
+    rainGroup.setMatrixAt(i, new THREE.Matrix4().setPosition(pos));
   }
   rainGroup.instanceMatrix.needsUpdate = true;
 }
 
-function moveAZombieTowardCamera() {
-  if (!zombie || !camera) return;
-  const zombiePos = zombie.position.clone();
-  const camPos = camera.position.clone();
-  const dir = new THREE.Vector3().subVectors(camPos, zombiePos);
+function moveZombie() {
+  if (!zombie) return;
+  const dir = new THREE.Vector3().subVectors(camera.position, zombie.position);
   dir.y = 0;
   const dist = dir.length();
   if (dist > 0.5) {
-    dir.normalize();
-    zombie.position.add(dir.multiplyScalar(0.05));
-    zombie.lookAt(camPos.x, zombie.position.y, camPos.z);
+    zombie.position.add(dir.normalize().multiplyScalar(0.05));
+    zombie.lookAt(camera.position.x, zombie.position.y, camera.position.z);
   }
 }
 
@@ -182,10 +186,19 @@ function animate() {
   controls.moveRight(velocity.x);
   controls.moveForward(velocity.z);
 
-  updateRainFixedArea();
-  moveAZombieTowardCamera();
-
+  updateRain();
+  moveZombie();
   if (mixer) mixer.update(delta);
+  if (gunMixer) gunMixer.update(delta);
+
+  if (shootTimer > 0) shootTimer -= delta;
+  if (reloadTimer > 0) reloadTimer -= delta;
+
+  if (gunActions.length > 0 && shootTimer <= 0 && reloadTimer <= 0) {
+    if (isWalking()) playGunAction(2);
+    else playGunAction(0);
+  }
+
   composer.render();
 }
 
