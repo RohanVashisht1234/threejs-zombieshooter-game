@@ -67,7 +67,6 @@ const loader = new GLTFLoader();
 
 
 
-
 loader.load(
   '/map.glb',
   gltf => {
