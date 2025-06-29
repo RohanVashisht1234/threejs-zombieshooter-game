@@ -62,6 +62,7 @@ let gunActions: THREE.AnimationAction[] = [];
 let currentGunAction = -1;
 let shootTimer = 0;
 let reloadTimer = 0;
+let isReloading = false;
 
 loader.load('/fps_gun_person_view.glb', gltf => {
   fpsGun = gltf.scene;
@@ -129,16 +130,20 @@ function playGunAction(index: number) {
   gunActions.forEach(a => a.stop());
   gunActions[index].reset().play();
   currentGunAction = index;
+
   if (index === 4) shootTimer = 0.3;
-  if (index === 7) reloadTimer = 1.5;
+  if (index === 7) {
+    reloadTimer = 3.5;
+    isReloading = true;
+  }
 }
 
 document.addEventListener('mousedown', e => {
-  if (e.button === 0 && reloadTimer <= 0) playGunAction(4);
+  if (e.button === 0 && reloadTimer <= 0 && !isReloading) playGunAction(4);
 });
 
 document.addEventListener('keydown', e => {
-  if (e.code === 'KeyR' && shootTimer <= 0) playGunAction(7);
+  if (e.code === 'KeyR' && shootTimer <= 0 && !isReloading) playGunAction(7);
 });
 
 function isWalking(): boolean {
@@ -192,9 +197,12 @@ function animate() {
   if (gunMixer) gunMixer.update(delta);
 
   if (shootTimer > 0) shootTimer -= delta;
-  if (reloadTimer > 0) reloadTimer -= delta;
+  if (reloadTimer > 0) {
+    reloadTimer -= delta;
+    if (reloadTimer <= 0) isReloading = false;
+  }
 
-  if (gunActions.length > 0 && shootTimer <= 0 && reloadTimer <= 0) {
+  if (gunActions.length > 0 && shootTimer <= 0 && !isReloading) {
     if (isWalking()) playGunAction(2);
     else playGunAction(0);
   }
