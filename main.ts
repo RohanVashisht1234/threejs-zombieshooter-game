@@ -45,8 +45,31 @@ scene.add(moonLight);
 
 // === Load Map ===
 const loader = new GLTFLoader();
+
+// const geo = new THREE.CircleGeometry(1, 32);
+// const mat = new THREE.MeshStandardMaterial({
+//   color: 0x333333,         // wet ground look
+//   metalness: 0.3,          // partial reflectivity
+//   roughness: 0.5,         // blurred, soft reflection
+//   transparent: true,
+//   opacity: 0.25,           // light opacity
+//   side: THREE.DoubleSide
+// });
+
+
+// const puddle = new THREE.Mesh(geo, mat);
+// puddle.rotation.x = -Math.PI / 2;
+// puddle.position.y = 0.15; // just barely above ground
+// puddle.position.z = 20.0; // just barely above ground
+// puddle.position.x = 1.0; // just barely above ground
+// scene.add(puddle);
+
+
+
+
+
 loader.load(
-  'map.glb',
+  '/map.glb',
   gltf => {
     const map = gltf.scene;
     map.traverse(o => {
@@ -87,6 +110,8 @@ for (let i = 0; i < rainCount; i++) {
   rainGroup.add(drop);
 }
 scene.add(rainGroup);
+
+
 
 // === Postprocessing ===
 const composer = new EffectComposer(renderer);
