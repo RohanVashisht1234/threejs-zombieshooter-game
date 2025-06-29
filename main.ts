@@ -13,6 +13,7 @@ const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerH
 camera.position.set(0, 2, 30);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.shadowMap.enabled = true;
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.shadowMap.enabled = true;
@@ -23,99 +24,84 @@ document.body.appendChild(renderer.domElement);
 // === Controls ===
 const controls = new PointerLockControls(camera, renderer.domElement);
 scene.add(controls.getObject());
-
 document.body.addEventListener('click', () => controls.lock());
 
 const keysPressed: Record<string, boolean> = {};
 document.addEventListener('keydown', e => keysPressed[e.code] = true);
 document.addEventListener('keyup', e => keysPressed[e.code] = false);
 
-const velocity = new THREE.Vector3();
-const direction = new THREE.Vector3();
-const moveSpeed = 10;
-
-// === Lighting (Night Mood) ===
-const ambient = new THREE.AmbientLight(0x222244, 0.8);
-scene.add(ambient);
-
+// === Lighting ===
+scene.add(new THREE.AmbientLight(0x222244, 0.8));
 const moonLight = new THREE.DirectionalLight(0x8888ff, 0.5);
 moonLight.position.set(20, 100, 50);
 moonLight.castShadow = true;
 scene.add(moonLight);
 
 // === Load Map ===
-const loader = new GLTFLoader();
+new GLTFLoader().load('/map.glb', gltf => {
+  gltf.scene.castShadow = true;
+  gltf.scene.receiveShadow = true;
 
-// const geo = new THREE.CircleGeometry(1, 32);
-// const mat = new THREE.MeshStandardMaterial({
-//   color: 0x333333,         // wet ground look
-//   metalness: 0.3,          // partial reflectivity
-//   roughness: 0.5,         // blurred, soft reflection
-//   transparent: true,
-//   opacity: 0.25,           // light opacity
-//   side: THREE.DoubleSide
-// });
+  gltf.scene.traverse(o => {
+    if ((o as THREE.Mesh).isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  scene.add(gltf.scene);
+}, undefined, console.error);
 
+// === Animated Model ===
+let mixer: THREE.AnimationMixer;
+let zombie: THREE.Object3D;
+new GLTFLoader().load('/zombie_hazmat.glb', (gltf) => {
+  const model = gltf.scene;
+  model.scale.x = 1.5;
+  model.scale.y = 1.5;
+  model.scale.z = 1.5;
+  model.position.y = 0.1;
+  model.castShadow = true;
+  model.receiveShadow = true;
+  const animations = gltf.animations;
+  mixer = new THREE.AnimationMixer(model);
+  const action = mixer.clipAction(animations[3]);
+  action.play();
+  scene.add(model);
+  zombie = model;
+}, undefined, console.error);
 
-// const puddle = new THREE.Mesh(geo, mat);
-// puddle.rotation.x = -Math.PI / 2;
-// puddle.position.y = 0.15; // just barely above ground
-// puddle.position.z = 20.0; // just barely above ground
-// puddle.position.x = 1.0; // just barely above ground
-// scene.add(puddle);
-
-
-
-
-loader.load(
-  '/map.glb',
-  gltf => {
-    const map = gltf.scene;
-    map.traverse(o => {
-      if ((o as THREE.Mesh).isMesh) {
-        o.castShadow = true;
-        o.receiveShadow = true;
-      }
-    });
-    scene.add(map);
-  },
-  undefined,
-  console.error
-);
-
-// === Rain with MeshStandardMaterial ===
-const rainCount = 15000;
-const rainGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.3, 5);
+// === Rain System ===
+const rainCount = 2000;
+const rainGeo = new THREE.PlaneGeometry(0.02, 0.4);
 const rainMat = new THREE.MeshStandardMaterial({
-  color: 0xccccff,
-  roughness: 2,
-  metalness: 1,
+  color: 0xaaaaee,
   transparent: true,
-  opacity: 0.2,
-  emissive:0,
+  opacity: 0.3,
+  metalness: 0.4,
+  roughness: 0.85,
+  side: THREE.DoubleSide,
 });
+const rainGroup = new THREE.InstancedMesh(rainGeo, rainMat, rainCount);
+const rainPositions: THREE.Vector3[] = [];
+const rainVelocities: number[] = [];
 
-const rainGroup = new THREE.Group();
 for (let i = 0; i < rainCount; i++) {
-  const drop = new THREE.Mesh(rainGeo, rainMat);
-  drop.position.set(
-    THREE.MathUtils.randFloatSpread(300),
-    THREE.MathUtils.randFloat(20, 100),
-    THREE.MathUtils.randFloatSpread(300)
+  const pos = new THREE.Vector3(
+    THREE.MathUtils.randFloat(-25, 25),
+    THREE.MathUtils.randFloat(0, 100),
+    THREE.MathUtils.randFloat(-25, 25)
   );
-  // drop.rotation.x = Math.PI / 2;
-  drop.castShadow = false;
-  drop.receiveShadow = false;
-  rainGroup.add(drop);
+  rainPositions.push(pos);
+  rainVelocities.push(THREE.MathUtils.randFloat(0.3, 0.8));
+  const matrix = new THREE.Matrix4().setPosition(pos);
+  rainGroup.setMatrixAt(i, matrix);
 }
 scene.add(rainGroup);
-
-
 
 // === Postprocessing ===
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.7, 0.99));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.5, 0.85));
 composer.addPass(new ShaderPass(GammaCorrectionShader));
 
 // === Resize Handling ===
@@ -126,28 +112,53 @@ window.addEventListener('resize', () => {
   composer.setSize(window.innerWidth, window.innerHeight);
 });
 
-
-
-
-
-
-// === Animation Loop ===
+// === Animation ===
 const clock = new THREE.Clock();
+const direction = new THREE.Vector3();
+const velocity = new THREE.Vector3();
+const moveSpeed = 10;
+
+function updateRainFixedArea() {
+  for (let i = 0; i < rainCount; i++) {
+    const pos = rainPositions[i];
+    pos.y -= rainVelocities[i];
+    if (pos.y < 0) {
+      pos.y = THREE.MathUtils.randFloat(60, 100);
+      pos.x = THREE.MathUtils.randFloat(-25, 25);
+      pos.z = THREE.MathUtils.randFloat(-25, 25);
+    }
+    const matrix = new THREE.Matrix4().setPosition(pos);
+    rainGroup.setMatrixAt(i, matrix);
+  }
+  rainGroup.instanceMatrix.needsUpdate = true;
+}
+
+function moveAZombieTowardCamera() {
+  if (!zombie || !camera) return;
+  const zombiePos = zombie.position.clone();
+  const camPos = camera.position.clone();
+  const dir = new THREE.Vector3().subVectors(camPos, zombiePos);
+  dir.y = 0;
+  const dist = dir.length();
+  if (dist > 0.5) {
+    dir.normalize();
+    zombie.position.add(dir.multiplyScalar(0.05));
+    zombie.lookAt(camPos.x, zombie.position.y, camPos.z);
+  }
+}
+
+const light = new THREE.SpotLight(0xffffff, 100);
+light.position.set(5, 10, 5);
+light.castShadow = true;
+scene.add(light);
+
+
 
 function animate() {
+  requestAnimationFrame(animate);
   const delta = clock.getDelta();
 
-  // Update raindrops
-  for (let i = 0; i < rainGroup.children.length; i++) {
-    const drop = rainGroup.children[i];
-    drop.position.y -= 0.5;
-    if (drop.position.y < 0) {
-      drop.position.y = THREE.MathUtils.randFloat(60, 100);
-    }
-  }
-
   // Movement
-  velocity.set(0, 0, 0);
   direction.set(0, 0, 0);
   if (keysPressed['KeyW']) direction.z += 1;
   if (keysPressed['KeyS']) direction.z -= 1;
@@ -158,8 +169,11 @@ function animate() {
   controls.moveRight(velocity.x);
   controls.moveForward(velocity.z);
 
+  updateRainFixedArea();
+  moveAZombieTowardCamera();
+
+  if (mixer) mixer.update(delta);
   composer.render();
-  requestAnimationFrame(animate);
 }
 
 animate();
