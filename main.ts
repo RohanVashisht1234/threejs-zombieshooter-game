@@ -94,6 +94,71 @@ ui.innerHTML = `
     </div>
   </div>
 `;
+
+
+const mobileUI = document.createElement('div');
+mobileUI.innerHTML = `
+  <div style="position:fixed;bottom:30px;left:30px;z-index:20">
+    <div id="joystick" style="width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.1);position:relative">
+      <div id="stick" style="width:50px;height:50px;border-radius:50%;background:#fff;position:absolute;top:25px;left:25px;"></div>
+    </div>
+  </div>
+  <div style="position:fixed;bottom:30px;right:30px;z-index:20;display:flex;flex-direction:column;gap:16px">
+    <button id="btnShoot" style="width:60px;height:60px;border-radius:50%;background:#f00;opacity:0.7">Shoot</button>
+    <button id="btnReload" style="width:60px;height:60px;border-radius:50%;background:#0af;opacity:0.7">Reload</button>
+    <button id="btnFlash" style="width:60px;height:60px;border-radius:50%;background:#ff0;opacity:0.7">Light</button>
+  </div>
+`;
+document.body.appendChild(mobileUI);
+
+
+let touchDirection = { x: 0, y: 0 };
+const joystick = document.getElementById('joystick')!;
+const stick = document.getElementById('stick')!;
+
+let dragging = false;
+let center = { x: 0, y: 0 };
+
+joystick.addEventListener('touchstart', e => {
+  dragging = true;
+  const rect = joystick.getBoundingClientRect();
+  center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+});
+
+joystick.addEventListener('touchmove', e => {
+  if (!dragging) return;
+  const touch = e.touches[0];
+  let dx = touch.clientX - center.x;
+  let dy = touch.clientY - center.y;
+  const dist = Math.min(Math.sqrt(dx * dx + dy * dy), 40);
+  const angle = Math.atan2(dy, dx);
+  dx = Math.cos(angle) * dist;
+  dy = Math.sin(angle) * dist;
+  stick.style.transform = `translate(${dx}px, ${dy}px)`;
+  touchDirection = { x: dx / 40, y: dy / 40 };
+});
+
+joystick.addEventListener('touchend', () => {
+  dragging = false;
+  stick.style.transform = `translate(0,0)`;
+  touchDirection = { x: 0, y: 0 };
+});
+
+
+(document.getElementById('btnShoot') as HTMLButtonElement).ontouchstart = () => { isShooting = true; };
+(document.getElementById('btnShoot') as HTMLButtonElement).ontouchend = () => { isShooting = false; };
+
+(document.getElementById('btnReload') as HTMLButtonElement).ontouchstart = () => {
+  if (shootTimer <= 0 && !isReloading && ammo < maxAmmo) playGunAction(7);
+};
+
+(document.getElementById('btnFlash') as HTMLButtonElement).ontouchstart = () => {
+  flashlightOn = !flashlightOn;
+  flashlight.visible = flashlightOn;
+};
+
+
+
 document.body.appendChild(ui);
 const ammoDisplay = document.getElementById('ammoDisplay')!;
 const healthFill = document.getElementById('healthFill')! as HTMLDivElement;
@@ -271,14 +336,52 @@ function updateFlashlight() {
   flashlight.position.set(0, 0, 0); // Keep the light at the camera
 }
 
+let isSwiping = false;
+let lastTouchX = 0, lastTouchY = 0;
+
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    isSwiping = true;
+    lastTouchX = e.touches[0].clientX;
+    lastTouchY = e.touches[0].clientY;
+  }
+}, { passive: false });
+
+document.addEventListener('touchmove', (e) => {
+  if (isSwiping && e.touches.length === 1) {
+    const touch = e.touches[0];
+    const dx = touch.clientX - lastTouchX;
+    const dy = touch.clientY - lastTouchY;
+
+    // Adjust sensitivity here
+    const sensitivity = 0.0025;
+    controls.getObject().rotation.y -= dx * sensitivity;
+    camera.rotation.x -= dy * sensitivity;
+
+    // Clamp vertical rotation
+    camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+
+    lastTouchX = touch.clientX;
+    lastTouchY = touch.clientY;
+  }
+}, { passive: false });
+
+document.addEventListener('touchend', () => {
+  isSwiping = false;
+});
+
+
 function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
-  direction.set(0, 0, 0);
-  if (keysPressed['KeyW']) direction.z += 1;
-  if (keysPressed['KeyS']) direction.z -= 1;
-  if (keysPressed['KeyA']) direction.x -= 1;
-  if (keysPressed['KeyD']) direction.x += 1;
+  direction.set(
+    keysPressed['KeyD'] ? 1 : keysPressed['KeyA'] ? -1 : 0,
+    0,
+    keysPressed['KeyW'] ? 1 : keysPressed['KeyS'] ? -1 : 0
+  );
+  direction.x += touchDirection.x;
+  direction.z += touchDirection.y;
+
   direction.normalize();
   velocity.copy(direction).multiplyScalar(moveSpeed * delta);
   controls.moveRight(velocity.x); controls.moveForward(velocity.z);
