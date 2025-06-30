@@ -7,22 +7,6 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { GammaCorrectionShader } from 'three/examples/jsm/shaders/GammaCorrectionShader.js';
 
-// === Responsive helpers ===
-function isMobileDevice() {
-  return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent)
-    || window.innerWidth < 850;
-}
-
-function setRendererFullScreen() {
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.domElement.style.width = '100vw';
-  renderer.domElement.style.height = '100vh';
-  renderer.domElement.style.position = 'fixed';
-  renderer.domElement.style.top = '0';
-  renderer.domElement.style.left = '0';
-  renderer.domElement.style.zIndex = '1';
-}
-
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 2, 30);
@@ -30,64 +14,15 @@ camera.position.set(0, 2, 30);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-setRendererFullScreen();
 document.body.appendChild(renderer.domElement);
 
-// =========== Start Screen ===========
-const startScreen = document.createElement('div');
-startScreen.innerHTML = `
-  <div id="start-screen" style="
-    position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:100;
-    background:linear-gradient(135deg,#0a1931 60%,#185adb 100%);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    font-family:sans-serif;">
-    <h1 style="color:#fff;font-size:2.5rem;text-shadow:0 2px 16px #222;">Ultimate FPS Survival</h1>
-    <p style="color:#dbeafe;font-size:1.2rem;margin-bottom:24px;text-align:center;max-width:90vw;">
-      Battle zombies with realistic controls. <br>
-      <span style="color:#ff0;">TIP:</span> Use the toggle to switch between <b>Desktop</b> and <b>Mobile</b> controls.<br>
-      <span style="color:#0ff;">On mobile, swipe to look and use the joystick to move!</span>
-    </p>
-    <button id="start-btn" style="
-      background:#00c9a7;color:#fff;
-      font-size:1.3rem;padding:16px 40px;border:0;border-radius:32px;box-shadow:0 4px 16px #185adb99;
-      cursor:pointer;transition:.2s;">Start Game</button>
-    <div style="margin-top:48px;">
-      <label style="font-size:1.1rem;color:#fff;user-select:none;cursor:pointer;">
-        <input type="checkbox" id="toggleMode" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;">
-        <span id="toggleModeLabel">Mobile Mode</span>
-      </label>
-    </div>
-  </div>
-`;
-document.body.appendChild(startScreen);
-
-let mobileMode = isMobileDevice();
-const toggleModeInput = startScreen.querySelector('#toggleMode') as HTMLInputElement;
-const toggleModeLabel = startScreen.querySelector('#toggleModeLabel') as HTMLSpanElement;
-toggleModeInput.checked = mobileMode;
-toggleModeLabel.textContent = mobileMode ? 'Mobile Mode' : 'Desktop Mode';
-
-toggleModeInput.onchange = () => {
-  mobileMode = toggleModeInput.checked;
-  toggleModeLabel.textContent = mobileMode ? 'Mobile Mode' : 'Desktop Mode';
-};
-
-function showStartScreen() { startScreen.style.display = 'flex'; }
-function hideStartScreen() { startScreen.style.display = 'none'; }
-showStartScreen();
-
-// =========== Pointer Lock Controls ===========
 const controls = new PointerLockControls(camera, renderer.domElement);
 scene.add(controls.getObject());
+document.body.addEventListener('click', () => controls.lock());
 
-function lockPointer() {
-  if (!mobileMode) controls.lock();
-}
-renderer.domElement.addEventListener('click', lockPointer);
-
-// =========== Keyboard & Touch Controls ===========
 const keysPressed: Record<string, boolean> = {};
 document.addEventListener('keydown', e => keysPressed[e.code] = true);
 document.addEventListener('keyup', e => keysPressed[e.code] = false);
@@ -99,6 +34,7 @@ moonLight.castShadow = true;
 scene.add(moonLight);
 const loader = new GLTFLoader();
 
+
 loader.load('/fighter_jet.glb', gltf => {
   gltf.scene.traverse(o => {
     o.castShadow = o.receiveShadow = true;
@@ -108,6 +44,7 @@ loader.load('/fighter_jet.glb', gltf => {
   gltf.scene.position.y = 3.1;
   scene.add(gltf.scene);
 });
+
 
 loader.load('/map.glb', gltf => {
   gltf.scene.traverse(o => {
@@ -148,7 +85,6 @@ loader.load('/fps_gun_person_view.glb', gltf => {
   camera.add(fpsGun);
 });
 
-// =========== UI =============
 const ui = document.createElement('div');
 ui.innerHTML = `
   <div style="position:fixed;top:20px;right:20px;color:#fff;font-family:sans-serif;font-size:16px;text-align:right;z-index:20">
@@ -159,94 +95,18 @@ ui.innerHTML = `
   </div>
 `;
 document.body.appendChild(ui);
-
 const ammoDisplay = document.getElementById('ammoDisplay')!;
 const healthFill = document.getElementById('healthFill')! as HTMLDivElement;
-function updateUI() {
+const updateUI = () => {
   ammoDisplay.textContent = `Ammo: ${ammo} / ${maxAmmo}`;
   healthFill.style.width = `${health}%`;
-}
-
-// =========== Mobile Controls =============
-const mobileUI = document.createElement('div');
-mobileUI.style.display = 'none';
-mobileUI.innerHTML = `
-  <div style="position:fixed;bottom:10vh;left:5vw;z-index:30;">
-    <div id="joystick" style="width:110px;height:110px;border-radius:50%;background:rgba(255,255,255,0.13);position:relative;box-shadow:0 2px 16px #0007;">
-      <div id="stick" style="width:60px;height:60px;border-radius:50%;background:#fff;position:absolute;top:25px;left:25px;box-shadow:0 2px 8px #0005;"></div>
-    </div>
-  </div>
-  <div style="position:fixed;bottom:10vh;right:5vw;z-index:30;display:flex;flex-direction:column;align-items:flex-end;gap:18px;">
-    <button id="btnShoot" style="width:68px;height:68px;border-radius:50%;background:linear-gradient(145deg,#ff4c4c,#ad1d1d);opacity:0.88;box-shadow:0 2px 12px #300;">
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="#fff"><path d="M21 11h-8V3h-2v8H3v2h8v8h2v-8h8z"/></svg>
-    </button>
-    <button id="btnReload" style="width:68px;height:68px;border-radius:50%;background:linear-gradient(145deg,#4caaff,#1841ad);opacity:0.88;box-shadow:0 2px 12px #003;">
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="#fff"><path d="M12 6V3l-4 4 4 4V7c3.31 0 6 2.69 6 6 0 1.76-.77 3.34-2 4.42l1.45 1.45C19.1 17.07 20 15.14 20 13c0-4.42-3.58-8-8-8zm-6 7c0-1.76.77-3.34 2-4.42L6.55 7.13C4.9 8.93 4 10.86 4 13c0 4.42 3.58 8 8 8v3l4-4-4-4v3c-3.31 0-6-2.69-6-6z"/></svg>
-    </button>
-    <button id="btnFlash" style="width:68px;height:68px;border-radius:50%;background:linear-gradient(145deg,#ffe066,#d9a900);opacity:0.88;box-shadow:0 2px 12px #664d00;">
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="#fff"><path d="M7 2v11h3v9l7-12h-4l3-8z"/></svg>
-    </button>
-  </div>
-`;
-document.body.appendChild(mobileUI);
-
-let touchDirection = { x: 0, y: 0 };
-const joystick = mobileUI.querySelector('#joystick') as HTMLDivElement;
-const stick = mobileUI.querySelector('#stick') as HTMLDivElement;
-
-let dragging = false;
-let center = { x: 0, y: 0 };
-
-if (joystick && stick) {
-  joystick.addEventListener('touchstart', e => {
-    dragging = true;
-    const rect = joystick.getBoundingClientRect();
-    center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  });
-  joystick.addEventListener('touchmove', e => {
-    if (!dragging) return;
-    const touch = e.touches[0];
-    let dx = touch.clientX - center.x;
-    let dy = touch.clientY - center.y;
-    const dist = Math.min(Math.sqrt(dx * dx + dy * dy), 45);
-    const angle = Math.atan2(dy, dx);
-    dx = Math.cos(angle) * dist;
-    dy = Math.sin(angle) * dist;
-    stick.style.transform = `translate(${dx}px, ${dy}px)`;
-    touchDirection = { x: dx / 45, y: dy / 45 };
-  });
-  joystick.addEventListener('touchend', () => {
-    dragging = false;
-    stick.style.transform = `translate(0,0)`;
-    touchDirection = { x: 0, y: 0 };
-  });
-}
-
-// Mobile Buttons
-const btnShoot = mobileUI.querySelector('#btnShoot') as HTMLButtonElement;
-const btnReload = mobileUI.querySelector('#btnReload') as HTMLButtonElement;
-const btnFlash = mobileUI.querySelector('#btnFlash') as HTMLButtonElement;
-
-btnShoot.ontouchstart = () => { isShooting = true; };
-btnShoot.ontouchend = () => { isShooting = false; };
-btnReload.ontouchstart = () => {
-  if (shootTimer <= 0 && !isReloading && ammo < maxAmmo) playGunAction(7);
-};
-btnFlash.ontouchstart = () => {
-  flashlightOn = !flashlightOn;
-  flashlight.visible = flashlightOn;
 };
 
-// =========== Aim Dot =============
 const aimDot = document.createElement('div');
-aimDot.style.cssText = `
-  position:fixed;top:50%;left:50%;width:10px;height:10px;background:#f43;border-radius:50%;
-  box-shadow:0 0 8px 2px #fff5;transform:translate(-50%,-50%);pointer-events:none;z-index:10
-`;
+aimDot.style.cssText = `position:fixed;top:50%;left:50%;width:8px;height:8px;background:#f00;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:10`;
 document.body.appendChild(aimDot);
 
-// =========== Rain & Effects =============
-const rainCount = 900;
+const rainCount = 1000;
 const rainGeometry = new THREE.PlaneGeometry(0.02, 0.4);
 const rainMaterial = new THREE.MeshStandardMaterial({
   color: 0xaaaaee, transparent: true, opacity: 0.3, metalness: 0.4, roughness: 0.85, side: THREE.DoubleSide,
@@ -295,7 +155,7 @@ composer.addPass(new ShaderPass(GammaCorrectionShader));
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  setRendererFullScreen();
+  renderer.setSize(window.innerWidth, window.innerHeight);
   composer.setSize(window.innerWidth, window.innerHeight);
 });
 
@@ -404,70 +264,21 @@ function shoot() {
 }
 
 function updateFlashlight() {
+  // Always point the flashlight in the direction the camera is facing (fix)
   camera.getWorldDirection(flashlight.target.position);
   flashlight.target.position.addVectors(camera.position, flashlight.target.position);
   if (!scene.children.includes(flashlight.target)) scene.add(flashlight.target);
-  flashlight.position.set(0, 0, 0);
+  flashlight.position.set(0, 0, 0); // Keep the light at the camera
 }
 
-// =========== Mobile FPS Look Controls ===========
-let isSwiping = false;
-let lastTouchX = 0, lastTouchY = 0;
-
-// Only for mobile mode!
-function setupMobileLookControls() {
-  document.addEventListener('touchstart', onTouchStart, { passive: false });
-  document.addEventListener('touchmove', onTouchMove, { passive: false });
-  document.addEventListener('touchend', onTouchEnd, { passive: false });
-}
-
-function removeMobileLookControls() {
-  document.removeEventListener('touchstart', onTouchStart);
-  document.removeEventListener('touchmove', onTouchMove);
-  document.removeEventListener('touchend', onTouchEnd);
-}
-
-function onTouchStart(e: TouchEvent) {
-  if (!mobileMode) return;
-  // Don't hijack joystick area
-  if ((e.target as HTMLElement).closest('#joystick')) return;
-  if (e.touches.length === 1) {
-    isSwiping = true;
-    lastTouchX = e.touches[0].clientX;
-    lastTouchY = e.touches[0].clientY;
-  }
-}
-function onTouchMove(e: TouchEvent) {
-  if (!mobileMode || !isSwiping || e.touches.length !== 1) return;
-  // Don't hijack joystick area
-  if ((e.target as HTMLElement).closest('#joystick')) return;
-  const touch = e.touches[0];
-  const dx = touch.clientX - lastTouchX;
-  const dy = touch.clientY - lastTouchY;
-  // COD-like FPS: horizontal = yaw, vertical = pitch
-  const sensitivity = 0.0032;
-  controls.getObject().rotation.y -= dx * sensitivity;
-  camera.rotation.x -= dy * sensitivity;
-  // Clamp
-  camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
-  lastTouchX = touch.clientX;
-  lastTouchY = touch.clientY;
-}
-function onTouchEnd(e: TouchEvent) {
-  isSwiping = false;
-}
-
-// =========== Game Loop ===========
 function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
-  direction.set(
-    keysPressed['KeyD'] ? 1 : keysPressed['KeyA'] ? -1 : 0,
-    0,
-    keysPressed['KeyW'] ? 1 : keysPressed['KeyS'] ? -1 : 0
-  );
-  direction.x += touchDirection.x;
-  direction.z += touchDirection.y;
+  direction.set(0, 0, 0);
+  if (keysPressed['KeyW']) direction.z += 1;
+  if (keysPressed['KeyS']) direction.z -= 1;
+  if (keysPressed['KeyA']) direction.x -= 1;
+  if (keysPressed['KeyD']) direction.x += 1;
   direction.normalize();
   velocity.copy(direction).multiplyScalar(moveSpeed * delta);
   controls.moveRight(velocity.x); controls.moveForward(velocity.z);
@@ -481,47 +292,9 @@ function animate() {
   if (gunActions.length > 0 && shootTimer <= 0 && !isReloading)
     playGunAction(isWalking() ? 2 : 0);
 
-  updateFlashlight();
+  updateFlashlight(); // <-- key for flashlight direction
   composer.render();
 }
 
-// =========== Mode Switch & Start =============
-function setModeUI() {
-  if (mobileMode) {
-    mobileUI.style.display = '';
-    setupMobileLookControls();
-  } else {
-    mobileUI.style.display = 'none';
-    removeMobileLookControls();
-  }
-}
-
-// Start button: hide splash, set control mode, lock pointer if desktop, start animation
-const startBtn = startScreen.querySelector('#start-btn') as HTMLButtonElement;
-startBtn.onclick = () => {
-  hideStartScreen();
-  setModeUI();
-  setRendererFullScreen();
-  // Desktop: lock pointer
-  if (!mobileMode) setTimeout(lockPointer, 100);
-  updateUI();
-  animate();
-};
-
-// Also allow Enter to start for desktop
-document.addEventListener('keydown', e => {
-  if (startScreen.style.display !== 'none' && (e.code === 'Enter' || e.code === 'Space')) {
-    startBtn.click();
-  }
-});
-
-// Allow switching mode while in-game (for demo/dev)
-toggleModeInput.onchange = () => {
-  mobileMode = toggleModeInput.checked;
-  toggleModeLabel.textContent = mobileMode ? 'Mobile Mode' : 'Desktop Mode';
-  setModeUI();
-  setRendererFullScreen();
-  if (!mobileMode) setTimeout(lockPointer, 100);
-};
-
-showStartScreen();
+updateUI();
+animate();
