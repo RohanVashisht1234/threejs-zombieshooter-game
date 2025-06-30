@@ -11,13 +11,13 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 2, 30);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', precision: 'highp', });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-document.body.appendChild(renderer.domElement);
+document.getElementById('container')?.appendChild(renderer.domElement);
 
 const controls = new PointerLockControls(camera, renderer.domElement);
 scene.add(controls.getObject());
@@ -150,7 +150,6 @@ scene.add(ground);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.4, 0.6));
 composer.addPass(new ShaderPass(GammaCorrectionShader));
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
