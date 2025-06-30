@@ -32,8 +32,20 @@ const moonLight = new THREE.DirectionalLight(0x8888ff, 0.5);
 moonLight.position.set(20, 100, 50);
 moonLight.castShadow = true;
 scene.add(moonLight);
-
 const loader = new GLTFLoader();
+
+
+loader.load('/fighter_jet.glb', gltf => {
+  gltf.scene.traverse(o => {
+    o.castShadow = o.receiveShadow = true;
+    if ((o as THREE.PointLight).isLight) (o as THREE.PointLight).shadow.bias = -0.0009;
+  });
+  gltf.scene.scale.set(0.17, 0.17, 0.17);
+  gltf.scene.position.y = 3.1;
+  scene.add(gltf.scene);
+});
+
+
 loader.load('/map.glb', gltf => {
   gltf.scene.traverse(o => {
     o.castShadow = o.receiveShadow = true;
