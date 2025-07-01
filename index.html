@@ -3,9 +3,10 @@
 
 <head>
   <meta charset="utf-8">
-  <title>My first three.js app</title>
+  <title>Zombie Strike</title>
   <style>
-    :root, html,
+    :root,
+    html,
     body {
       margin: 0;
       padding: 0;
@@ -13,18 +14,131 @@
       height: 100vh;
       overflow: hidden;
       background-color: black;
+      font-family: 'Segoe UI', sans-serif;
     }
 
     #container {
       width: 100vw;
       height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+    }
+
+    #start-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(5, 5, 20, 0.95));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      color: #00f0ff;
+      text-shadow: 0 0 10px #00f0ff, 0 0 20px #00f0ff;
+      animation: fadeIn 1s ease-out;
+    }
+
+    #title {
+      font-size: 3.5rem;
+      margin-bottom: 2rem;
+      animation: glow 2s infinite alternate;
+    }
+
+    #start-button {
+      padding: 1rem 2.5rem;
+      font-size: 1.5rem;
+      color: white;
+      background: #00f0ff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 0 20px #00f0ff, 0 0 40px #00f0ff;
+      transition: transform 0.2s, background 0.3s;
+    }
+
+    #start-button:hover {
+      transform: scale(1.05);
+      background: #00cce0;
+    }
+
+    @keyframes glow {
+      from {
+        text-shadow: 0 0 10px #00f0ff, 0 0 20px #00f0ff;
+      }
+
+      to {
+        text-shadow: 0 0 20px #00f0ff, 0 0 40px #00f0ff;
+      }
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    #loading-screen {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 100;
+      background: rgba(10, 10, 20, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+    }
+
+    #loading-text {
+      color: #fff;
+      font-size: 3rem;
+      margin-bottom: 2rem;
+      letter-spacing: 0.2em;
+      text-shadow: 0 0 20px #00f0ff;
+      animation: glow 2s infinite alternate;
+    }
+
+    #loading-bar-bg {
+      width: 200px;
+      height: 16px;
+      background: #222;
+      border-radius: 8px;
       overflow: hidden;
-      background-color: black;
+      margin-top: 1rem;
+    }
+
+    #loading-bar {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #00f0ff, #00cce0);
+      transition: width 0.3s;
     }
   </style>
 </head>
 
 <body>
+  <div id="start-screen">
+    <div id="title">⚡ ZOMBIE STRIKE ⚡</div>
+    <button id="start-button">Start Game</button>
+  </div>
+  <div id="loading-screen">
+    <div id="loading-text">LOADING</div>
+    <div id="loading-bar-bg">
+      <div id="loading-bar"></div>
+    </div>
+  </div>
   <div id="container"></div>
   <script type="module" src="/main.ts"></script>
 </body>

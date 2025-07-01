@@ -7,293 +7,825 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { GammaCorrectionShader } from 'three/examples/jsm/shaders/GammaCorrectionShader.js';
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 2, 30);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', precision: 'highp', });
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-document.getElementById('container')?.appendChild(renderer.domElement);
-
-const controls = new PointerLockControls(camera, renderer.domElement);
-scene.add(controls.getObject());
-document.body.addEventListener('click', () => controls.lock());
-
-const keysPressed: Record<string, boolean> = {};
-document.addEventListener('keydown', e => keysPressed[e.code] = true);
-document.addEventListener('keyup', e => keysPressed[e.code] = false);
-
-scene.add(new THREE.AmbientLight(0x222244, 0.8));
-const moonLight = new THREE.DirectionalLight(0x8888ff, 0.5);
-moonLight.position.set(20, 100, 50);
-moonLight.castShadow = true;
-scene.add(moonLight);
-const loader = new GLTFLoader();
-
-
-loader.load('/fighter_jet.glb', gltf => {
-  gltf.scene.traverse(o => {
-    o.castShadow = o.receiveShadow = true;
-    if ((o as THREE.PointLight).isLight) (o as THREE.PointLight).shadow.bias = -0.0009;
-  });
-  gltf.scene.scale.set(0.17, 0.17, 0.17);
-  gltf.scene.position.y = 3.1;
-  scene.add(gltf.scene);
-});
-
-
-loader.load('/map.glb', gltf => {
-  gltf.scene.traverse(o => {
-    o.castShadow = o.receiveShadow = true;
-    if ((o as THREE.PointLight).isLight) (o as THREE.PointLight).shadow.bias = -0.0009;
-  });
-  gltf.scene.position.y = -0.2;
-  scene.add(gltf.scene);
-});
-
-let mixer: THREE.AnimationMixer, zombie: THREE.Object3D;
-loader.load('/zombie_hazmat.glb', gltf => {
-  const model = gltf.scene;
-  model.scale.set(1.5, 1.5, 1.5);
-  model.position.y = 0.05;
-  model.traverse(child => child.castShadow = child.receiveShadow = true);
-  mixer = new THREE.AnimationMixer(model);
-  mixer.clipAction(gltf.animations[3]).play().timeScale = 2;
-  scene.add(zombie = model);
-});
-
-let fpsGun: THREE.Object3D, gunMixer: THREE.AnimationMixer, gunActions: THREE.AnimationAction[] = [];
-let currentGunAction = -1, shootTimer = 0, reloadTimer = 0, isReloading = false, ammo = 40, maxAmmo = 40, health = 100;
-
-const bullets: THREE.Mesh[] = [];
-const bulletGeometry = new THREE.SphereGeometry(0.05, 4, 4);
-const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-
-loader.load('/fps_gun_person_view.glb', gltf => {
-  fpsGun = gltf.scene;
-  fpsGun.scale.set(0.8, 0.8, 0.8);
-  fpsGun.position.set(0.2, -0.5, -0.3);
-  fpsGun.rotation.y = THREE.MathUtils.degToRad(-180);
-  fpsGun.traverse(child => child.castShadow = child.receiveShadow = true);
-  gunMixer = new THREE.AnimationMixer(fpsGun);
-  gunActions = gltf.animations.map(a => gunMixer.clipAction(a));
-  playGunAction(0);
-  camera.add(fpsGun);
-});
-
-const ui = document.createElement('div');
-ui.innerHTML = `
-  <div style="position:fixed;top:20px;right:20px;color:#fff;font-family:sans-serif;font-size:16px;text-align:right;z-index:20">
-    <div id="ammoDisplay">Ammo: 40 / 40</div>
-    <div id="healthBar" style="margin-top:8px;width:120px;height:16px;border:1px solid #fff">
-      <div id="healthFill" style="background:#f00;width:100%;height:100%"></div>
-    </div>
-  </div>
-`;
-document.body.appendChild(ui);
-const ammoDisplay = document.getElementById('ammoDisplay')!;
-const healthFill = document.getElementById('healthFill')! as HTMLDivElement;
-const updateUI = () => {
-  ammoDisplay.textContent = `Ammo: ${ammo} / ${maxAmmo}`;
-  healthFill.style.width = `${health}%`;
+// Constants
+const CONFIG = {
+  CAMERA: {
+    FOV: 55,
+    NEAR: 0.1,
+    FAR: 1000,
+    INITIAL_POSITION: { x: 0, y: 2, z: 30 }
+  },
+  RENDERER: {
+    PIXEL_RATIO_MAX: 1.5
+  },
+  MOVEMENT: {
+    SPEED: 10
+  },
+  WEAPON: {
+    MAX_AMMO: 40,
+    SHOOT_COOLDOWN: 0.15,
+    RELOAD_TIME: 3.5,
+    MUZZLE_FLASH_DURATION: 50
+  },
+  ZOMBIE: {
+    SPEED: 0.05,
+    DAMAGE_RATE: 0.2,
+    MIN_DISTANCE: 0.5
+  },
+  RAIN: {
+    COUNT: 1000,
+    FALL_SPEED_MIN: 0.3,
+    FALL_SPEED_MAX: 0.8,
+    SPAWN_RANGE: 25,
+    HEIGHT_MIN: 60,
+    HEIGHT_MAX: 100
+  },
+  BULLET: {
+    SPEED: 20,
+    MAX_DISTANCE: 200
+  },
+  PLAYER: {
+    INITIAL_HEALTH: 100
+  }
 };
 
-const aimDot = document.createElement('div');
-aimDot.style.cssText = `position:fixed;top:50%;left:50%;width:8px;height:8px;background:#f00;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:10`;
-document.body.appendChild(aimDot);
-
-const rainCount = 1000;
-const rainGeometry = new THREE.PlaneGeometry(0.02, 0.4);
-const rainMaterial = new THREE.MeshStandardMaterial({
-  color: 0xaaaaee, transparent: true, opacity: 0.3, metalness: 0.4, roughness: 0.85, side: THREE.DoubleSide,
-});
-const rainGroup = new THREE.InstancedMesh(rainGeometry, rainMaterial, rainCount);
-const rainPositions = new Float32Array(rainCount * 3);
-const rainVelocities = new Float32Array(rainCount);
-
-const splashGeometry = new THREE.CircleGeometry(0.05, 20);
-const splashMaterial = new THREE.MeshStandardMaterial({
-  color: 0xdddddd, emissive: 0, transparent: true, opacity: 0.5, metalness: 0.4, side: THREE.FrontSide,
-});
-const splashGroup = new THREE.InstancedMesh(splashGeometry, splashMaterial, rainCount);
-const splashTimers = new Float32Array(rainCount);
-scene.add(splashGroup);
-
-for (let i = 0; i < rainCount; i++) {
-  rainPositions[i * 3 + 0] = THREE.MathUtils.randFloat(-25, 25);
-  rainPositions[i * 3 + 1] = THREE.MathUtils.randFloat(0, 100);
-  rainPositions[i * 3 + 2] = THREE.MathUtils.randFloat(-25, 25);
-  rainVelocities[i] = THREE.MathUtils.randFloat(0.3, 0.8);
-  rainGroup.setMatrixAt(i, new THREE.Matrix4().setPosition(
-    rainPositions[i * 3 + 0], rainPositions[i * 3 + 1], rainPositions[i * 3 + 2]
-  ));
+// Game State
+class GameState {
+  public ammo: number = CONFIG.WEAPON.MAX_AMMO;
+  public maxAmmo: number = CONFIG.WEAPON.MAX_AMMO;
+  public health: number = CONFIG.PLAYER.INITIAL_HEALTH;
+  public shootTimer: number = 0;
+  public reloadTimer: number = 0;
+  public isReloading: boolean = false;
+  public isShooting: boolean = false;
+  public flashlightOn: boolean = false;
+  public currentGunAction: number = -1;
+  public keysPressed: Record<string, boolean> = {};
 }
-scene.add(rainGroup);
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(500, 500),
-  new THREE.MeshStandardMaterial({
-    color: 0x111122,
-    metalness: 0.8,
-    roughness: 0.3,
-    opacity: 0.1,
-    transparent: true
-  })
-);
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
+// Scene Setup
+class SceneManager {
+  public scene: THREE.Scene;
+  public camera: THREE.PerspectiveCamera;
+  public renderer: THREE.WebGLRenderer;
 
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new ShaderPass(GammaCorrectionShader));
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
-});
+  constructor() {
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(
+      CONFIG.CAMERA.FOV,
+      window.innerWidth / window.innerHeight,
+      CONFIG.CAMERA.NEAR,
+      CONFIG.CAMERA.FAR
+    );
+    this.camera.position.set(
+      CONFIG.CAMERA.INITIAL_POSITION.x,
+      CONFIG.CAMERA.INITIAL_POSITION.y,
+      CONFIG.CAMERA.INITIAL_POSITION.z
+    );
 
-const clock = new THREE.Clock();
-const direction = new THREE.Vector3(), velocity = new THREE.Vector3();
-const moveSpeed = 10;
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+      precision: 'highp'
+    });
+    this.setupRenderer();
+  }
 
-function playGunAction(idx: number) {
-  if (!gunActions.length || idx === currentGunAction) return;
-  gunActions.forEach(a => a.stop());
-  gunActions[idx].reset().play();
-  currentGunAction = idx;
-  if (idx === 4) shootTimer = 0.1;
-  if (idx === 7) {
-    reloadTimer = 3.5; isReloading = true;
-    setTimeout(() => { ammo = maxAmmo; isReloading = false; updateUI(); }, 3500);
+  private setupRenderer(): void {
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, CONFIG.RENDERER.PIXEL_RATIO_MAX));
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    document.getElementById('container')?.appendChild(this.renderer.domElement);
   }
 }
 
-let isShooting = false, flashlightOn = false;
-const flashlight = new THREE.SpotLight(0xffffff, 100, 50, Math.PI / 6, 0.3, 1.5);
-flashlight.shadow.normalBias = 1;
-flashlight.castShadow = true;
-flashlight.position.set(0, 0, 0);
-camera.add(flashlight);
+// Lighting System
+class LightingManager {
+  private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  public flashlight: THREE.SpotLight;
+  public muzzleFlash: THREE.PointLight;
 
-const muzzleFlash = new THREE.PointLight(0xffaa33, 7, 100);
-muzzleFlash.visible = false;
-muzzleFlash.castShadow = true;
-camera.add(muzzleFlash);
-muzzleFlash.position.set(0, 0, -1.5);
-
-document.addEventListener('keydown', e => {
-  if (e.code === 'KeyR' && shootTimer <= 0 && !isReloading && ammo < maxAmmo) playGunAction(7);
-  if (e.code === 'KeyF') {
-    flashlightOn = !flashlightOn;
-    flashlight.visible = flashlightOn;
+  constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
+    this.scene = scene;
+    this.camera = camera;
+    this.setupLights();
   }
-});
-document.addEventListener('mousedown', e => { if (e.button === 0) isShooting = true; });
-document.addEventListener('mouseup', () => isShooting = false);
 
-const isWalking = () =>
-  keysPressed['KeyW'] || keysPressed['KeyA'] || keysPressed['KeyS'] || keysPressed['KeyD'];
+  private setupLights(): void {
+    // Ambient light
+    const ambientLight = new THREE.AmbientLight(0x222244, 0.8);
+    this.scene.add(ambientLight);
 
-function updateRain() {
-  const tempMatrix = new THREE.Matrix4(), tempSplashMatrix = new THREE.Matrix4();
-  for (let i = 0; i < rainCount; i++) {
-    rainPositions[i * 3 + 1] -= rainVelocities[i];
-    if (rainPositions[i * 3 + 1] < 0) {
-      splashTimers[i] = 0.3;
-      rainPositions[i * 3 + 0] = THREE.MathUtils.randFloat(-25, 25);
-      rainPositions[i * 3 + 1] = THREE.MathUtils.randFloat(60, 100);
-      rainPositions[i * 3 + 2] = THREE.MathUtils.randFloat(-25, 25);
+    // Moon light
+    const moonLight = new THREE.DirectionalLight(0x8888ff, 0.5);
+    moonLight.position.set(20, 100, 50);
+    moonLight.castShadow = true;
+    this.scene.add(moonLight);
+
+    // Flashlight
+    this.flashlight = new THREE.SpotLight(0xffffff, 100, 50, Math.PI / 6, 0.3, 1.5);
+    this.flashlight.shadow.normalBias = 1;
+    this.flashlight.castShadow = true;
+    this.flashlight.position.set(0, 0, 0);
+    this.flashlight.visible = false;
+    this.camera.add(this.flashlight);
+
+    // Muzzle flash
+    this.muzzleFlash = new THREE.PointLight(0xffaa33, 7, 100);
+    this.muzzleFlash.visible = false;
+    this.muzzleFlash.castShadow = true;
+    this.muzzleFlash.shadow.normalBias = 1;
+    this.muzzleFlash.position.set(0, 0, -1.5);
+    this.camera.add(this.muzzleFlash);
+  }
+
+  public updateFlashlight(): void {
+    this.camera.getWorldDirection(this.flashlight.target.position);
+    this.flashlight.target.position.addVectors(this.camera.position, this.flashlight.target.position);
+    if (!this.scene.children.includes(this.flashlight.target)) {
+      this.scene.add(this.flashlight.target);
     }
-    tempMatrix.setPosition(rainPositions[i * 3 + 0], rainPositions[i * 3 + 1], rainPositions[i * 3 + 2]);
-    rainGroup.setMatrixAt(i, tempMatrix);
-
-    if (splashTimers[i] > 0) {
-      splashTimers[i] -= 0.016;
-      tempSplashMatrix.makeRotationX(-Math.PI / 2);
-      tempSplashMatrix.setPosition(rainPositions[i * 3 + 0], 0.01, rainPositions[i * 3 + 2]);
-      splashGroup.setMatrixAt(i, tempSplashMatrix);
-    } else splashGroup.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
+    this.flashlight.position.set(0, 0, 0);
   }
-  rainGroup.instanceMatrix.needsUpdate = true;
-  splashGroup.instanceMatrix.needsUpdate = true;
-}
 
-function moveZombie() {
-  if (!zombie) return;
-  const dir = new THREE.Vector3().subVectors(camera.position, zombie.position);
-  dir.y = 0;
-  const dist = dir.length();
-  if (dist > 0.5) {
-    zombie.position.add(dir.normalize().multiplyScalar(0.05));
-    zombie.lookAt(camera.position.x, zombie.position.y, camera.position.z);
-  } else if (health > 0) {
-    health -= 0.2; updateUI();
+  public toggleFlashlight(): void {
+    this.flashlight.visible = !this.flashlight.visible;
+  }
+
+  public showMuzzleFlash(): void {
+    this.muzzleFlash.visible = true;
+    setTimeout(() => {
+      this.muzzleFlash.visible = false;
+    }, CONFIG.WEAPON.MUZZLE_FLASH_DURATION);
   }
 }
 
-function updateBullets(delta: number) {
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    const b = bullets[i];
-    b.position.add(b.userData.velocity.clone().multiplyScalar(delta * 20));
-    if (b.position.length() > 200) {
-      scene.remove(b); bullets.splice(i, 1);
+// Model Manager
+class ModelManager {
+  private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  private loader: GLTFLoader;
+
+  public zombieMixer?: THREE.AnimationMixer;
+  public zombie?: THREE.Object3D;
+  public fpsGun?: THREE.Object3D;
+  public gunMixer?: THREE.AnimationMixer;
+  public gunActions: THREE.AnimationAction[] = [];
+  // Add loadingManager
+  constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, loadingManager: THREE.LoadingManager) {
+    this.scene = scene;
+    this.camera = camera;
+    this.loader = new GLTFLoader(loadingManager);
+    this.loadModels();
+  }
+
+  private loadModels(): void {
+    this.loadMap();
+    this.loadZombie();
+    this.loadFPSGun();
+  }
+
+  private loadMap(): void {
+    this.loader.load('/map.glb', (gltf) => {
+      gltf.scene.traverse((o) => {
+        o.castShadow = o.receiveShadow = true;
+        if ((o as THREE.PointLight).isLight) {
+          (o as THREE.PointLight).shadow.bias = -0.0009;
+        }
+      });
+      gltf.scene.position.y = -0.2;
+      this.scene.add(gltf.scene);
+    });
+  }
+
+  private loadZombie(): void {
+    this.loader.load('/zombie_hazmat.glb', (gltf) => {
+      const model = gltf.scene;
+      model.scale.set(1.5, 1.5, 1.5);
+      model.position.y = 0.05;
+      model.traverse((child) => {
+        child.castShadow = child.receiveShadow = true;
+      });
+      this.zombieMixer = new THREE.AnimationMixer(model);
+      this.zombieMixer.clipAction(gltf.animations[3]).play().timeScale = 2;
+      this.zombie = model;
+      this.scene.add(model);
+    });
+  }
+
+  private loadFPSGun(): void {
+    this.loader.load('/fps_gun_person_view.glb', (gltf) => {
+      this.fpsGun = gltf.scene;
+      this.fpsGun.scale.set(0.8, 0.8, 0.8);
+      this.fpsGun.position.set(0.2, -0.5, -0.3);
+      this.fpsGun.rotation.y = THREE.MathUtils.degToRad(-180);
+      this.fpsGun.traverse((child) => {
+        child.castShadow = child.receiveShadow = true;
+      });
+      this.gunMixer = new THREE.AnimationMixer(this.fpsGun);
+      this.gunActions = gltf.animations.map((a) => this.gunMixer!.clipAction(a));
+      this.camera.add(this.fpsGun);
+    });
+  }
+}
+
+// Weather System
+class WeatherManager {
+  private scene: THREE.Scene;
+  private rainGroup: THREE.InstancedMesh;
+  private splashGroup: THREE.InstancedMesh;
+  private rainPositions: Float32Array;
+  private rainVelocities: Float32Array;
+  private splashTimers: Float32Array;
+
+  constructor(scene: THREE.Scene) {
+    this.scene = scene;
+    this.setupRain();
+    this.setupGround();
+  }
+
+  private setupRain(): void {
+    const rainGeometry = new THREE.PlaneGeometry(0.02, 0.4);
+    const rainMaterial = new THREE.MeshStandardMaterial({
+      color: 0xaaaaee,
+      transparent: true,
+      opacity: 0.3,
+      metalness: 0.4,
+      roughness: 0.85,
+      side: THREE.DoubleSide
+    });
+
+    this.rainGroup = new THREE.InstancedMesh(rainGeometry, rainMaterial, CONFIG.RAIN.COUNT);
+    this.rainPositions = new Float32Array(CONFIG.RAIN.COUNT * 3);
+    this.rainVelocities = new Float32Array(CONFIG.RAIN.COUNT);
+
+    const splashGeometry = new THREE.CircleGeometry(0.05, 20);
+    const splashMaterial = new THREE.MeshStandardMaterial({
+      color: 0xdddddd,
+      emissive: 0,
+      transparent: true,
+      opacity: 0.5,
+      metalness: 0.4,
+      side: THREE.FrontSide
+    });
+
+    this.splashGroup = new THREE.InstancedMesh(splashGeometry, splashMaterial, CONFIG.RAIN.COUNT);
+    this.splashTimers = new Float32Array(CONFIG.RAIN.COUNT);
+
+    this.initializeRainDrops();
+    this.scene.add(this.rainGroup);
+    this.scene.add(this.splashGroup);
+  }
+
+  private initializeRainDrops(): void {
+    for (let i = 0; i < CONFIG.RAIN.COUNT; i++) {
+      this.rainPositions[i * 3 + 0] = THREE.MathUtils.randFloat(-CONFIG.RAIN.SPAWN_RANGE, CONFIG.RAIN.SPAWN_RANGE);
+      this.rainPositions[i * 3 + 1] = THREE.MathUtils.randFloat(0, 100);
+      this.rainPositions[i * 3 + 2] = THREE.MathUtils.randFloat(-CONFIG.RAIN.SPAWN_RANGE, CONFIG.RAIN.SPAWN_RANGE);
+      this.rainVelocities[i] = THREE.MathUtils.randFloat(CONFIG.RAIN.FALL_SPEED_MIN, CONFIG.RAIN.FALL_SPEED_MAX);
+      this.rainGroup.setMatrixAt(i, new THREE.Matrix4().setPosition(
+        this.rainPositions[i * 3 + 0],
+        this.rainPositions[i * 3 + 1],
+        this.rainPositions[i * 3 + 2]
+      ));
+    }
+  }
+
+  private setupGround(): void {
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(500, 500),
+      new THREE.MeshStandardMaterial({
+        color: 0x111122,
+        metalness: 0.8,
+        roughness: 0.3,
+        opacity: 0.1,
+        transparent: true
+      })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    this.scene.add(ground);
+  }
+
+  public updateRain(): void {
+    const tempMatrix = new THREE.Matrix4();
+    const tempSplashMatrix = new THREE.Matrix4();
+
+    for (let i = 0; i < CONFIG.RAIN.COUNT; i++) {
+      this.rainPositions[i * 3 + 1] -= this.rainVelocities[i];
+
+      if (this.rainPositions[i * 3 + 1] < 0) {
+        this.splashTimers[i] = 0.3;
+        this.rainPositions[i * 3 + 0] = THREE.MathUtils.randFloat(-CONFIG.RAIN.SPAWN_RANGE, CONFIG.RAIN.SPAWN_RANGE);
+        this.rainPositions[i * 3 + 1] = THREE.MathUtils.randFloat(CONFIG.RAIN.HEIGHT_MIN, CONFIG.RAIN.HEIGHT_MAX);
+        this.rainPositions[i * 3 + 2] = THREE.MathUtils.randFloat(-CONFIG.RAIN.SPAWN_RANGE, CONFIG.RAIN.SPAWN_RANGE);
+      }
+
+      tempMatrix.setPosition(
+        this.rainPositions[i * 3 + 0],
+        this.rainPositions[i * 3 + 1],
+        this.rainPositions[i * 3 + 2]
+      );
+      this.rainGroup.setMatrixAt(i, tempMatrix);
+
+      if (this.splashTimers[i] > 0) {
+        this.splashTimers[i] -= 0.016;
+        tempSplashMatrix.makeRotationX(-Math.PI / 2);
+        tempSplashMatrix.setPosition(
+          this.rainPositions[i * 3 + 0],
+          0.01,
+          this.rainPositions[i * 3 + 2]
+        );
+        this.splashGroup.setMatrixAt(i, tempSplashMatrix);
+      } else {
+        this.splashGroup.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0));
+      }
+    }
+
+    this.rainGroup.instanceMatrix.needsUpdate = true;
+    this.splashGroup.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// Weapon System
+class WeaponManager {
+  private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  private gameState: GameState;
+  private modelManager: ModelManager;
+  private lightingManager: LightingManager;
+  private bullets: THREE.Mesh[] = [];
+  private bulletGeometry: THREE.SphereGeometry;
+  private bulletMaterial: THREE.MeshBasicMaterial;
+
+  constructor(
+    scene: THREE.Scene,
+    camera: THREE.PerspectiveCamera,
+    gameState: GameState,
+    modelManager: ModelManager,
+    lightingManager: LightingManager
+  ) {
+    this.scene = scene;
+    this.camera = camera;
+    this.gameState = gameState;
+    this.modelManager = modelManager;
+    this.lightingManager = lightingManager;
+    this.setupBullets();
+  }
+
+  private setupBullets(): void {
+    this.bulletGeometry = new THREE.SphereGeometry(0.05, 4, 4);
+    this.bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+  }
+
+  public playGunAction(idx: number): void {
+    if (!this.modelManager.gunActions.length || idx === this.gameState.currentGunAction) return;
+
+    this.modelManager.gunActions.forEach((a) => a.stop());
+    this.modelManager.gunActions[idx].reset().play();
+    this.gameState.currentGunAction = idx;
+
+    if (idx === 4) this.gameState.shootTimer = 0.1;
+    if (idx === 7) {
+      this.gameState.reloadTimer = CONFIG.WEAPON.RELOAD_TIME;
+      this.gameState.isReloading = true;
+      setTimeout(() => {
+        this.gameState.ammo = this.gameState.maxAmmo;
+        this.gameState.isReloading = false;
+      }, CONFIG.WEAPON.RELOAD_TIME * 1000);
+    }
+  }
+
+  public shoot(): void {
+    this.playGunAction(4);
+    this.gameState.ammo--;
+
+    const bullet = new THREE.Mesh(this.bulletGeometry, this.bulletMaterial);
+    bullet.position.copy(this.camera.position);
+    const dir = new THREE.Vector3();
+    this.camera.getWorldDirection(dir);
+    bullet.userData.velocity = dir.clone().multiplyScalar(CONFIG.BULLET.SPEED);
+    this.bullets.push(bullet);
+    this.scene.add(bullet);
+
+    this.lightingManager.showMuzzleFlash();
+  }
+
+  public updateBullets(delta: number): void {
+    for (let i = this.bullets.length - 1; i >= 0; i--) {
+      const bullet = this.bullets[i];
+      bullet.position.add(bullet.userData.velocity.clone().multiplyScalar(delta * CONFIG.BULLET.SPEED));
+
+      if (bullet.position.length() > CONFIG.BULLET.MAX_DISTANCE) {
+        this.scene.remove(bullet);
+        this.bullets.splice(i, 1);
+      }
+    }
+  }
+
+  public canShoot(): boolean {
+    return this.gameState.shootTimer <= 0 && !this.gameState.isReloading && this.gameState.ammo > 0;
+  }
+
+  public canReload(): boolean {
+    return this.gameState.shootTimer <= 0 && !this.gameState.isReloading && this.gameState.ammo < this.gameState.maxAmmo;
+  }
+}
+
+// Enemy AI
+class EnemyManager {
+  private gameState: GameState;
+  private modelManager: ModelManager;
+  private camera: THREE.PerspectiveCamera;
+
+  constructor(gameState: GameState, modelManager: ModelManager, camera: THREE.PerspectiveCamera) {
+    this.gameState = gameState;
+    this.modelManager = modelManager;
+    this.camera = camera;
+  }
+
+  public updateZombie(): void {
+    if (!this.modelManager.zombie) return;
+
+    const direction = new THREE.Vector3().subVectors(this.camera.position, this.modelManager.zombie.position);
+    direction.y = 0;
+    const distance = direction.length();
+
+    if (distance > CONFIG.ZOMBIE.MIN_DISTANCE) {
+      this.modelManager.zombie.position.add(direction.normalize().multiplyScalar(CONFIG.ZOMBIE.SPEED));
+      this.modelManager.zombie.lookAt(this.camera.position.x, this.modelManager.zombie.position.y, this.camera.position.z);
+    } else if (this.gameState.health > 0) {
+      this.gameState.health -= CONFIG.ZOMBIE.DAMAGE_RATE;
     }
   }
 }
 
-function shoot() {
-  playGunAction(4);
-  ammo--; updateUI();
-  const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
-  bullet.position.copy(camera.position);
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  bullet.userData.velocity = dir.clone().multiplyScalar(20);
-  bullets.push(bullet); scene.add(bullet);
+// UI Manager
+class UIManager {
+  private gameState: GameState;
+  private ammoDisplay: HTMLElement;
+  private healthFill: HTMLElement;
 
-  // Muzzle flash
-  muzzleFlash.visible = true;
-  setTimeout(() => { muzzleFlash.visible = false; }, 50);
-}
-
-function updateFlashlight() {
-  // Always point the flashlight in the direction the camera is facing (fix)
-  camera.getWorldDirection(flashlight.target.position);
-  flashlight.target.position.addVectors(camera.position, flashlight.target.position);
-  if (!scene.children.includes(flashlight.target)) scene.add(flashlight.target);
-  flashlight.position.set(0, 0, 0); // Keep the light at the camera
-}
-
-function animate() {
-  requestAnimationFrame(animate);
-  const delta = clock.getDelta();
-  direction.set(0, 0, 0);
-  if (keysPressed['KeyW']) direction.z += 1;
-  if (keysPressed['KeyS']) direction.z -= 1;
-  if (keysPressed['KeyA']) direction.x -= 1;
-  if (keysPressed['KeyD']) direction.x += 1;
-  direction.normalize();
-  velocity.copy(direction).multiplyScalar(moveSpeed * delta);
-  controls.moveRight(velocity.x); controls.moveForward(velocity.z);
-
-  if (isShooting && shootTimer <= 0 && !isReloading && ammo > 0) {
-    shoot(); shootTimer = 0.15;
+  constructor(gameState: GameState) {
+    this.gameState = gameState;
+    this.setupUI();
   }
-  updateRain(); moveZombie(); updateBullets(delta);
-  gunMixer?.update(delta); mixer?.update(delta);
-  shootTimer -= delta; reloadTimer -= delta;
-  if (gunActions.length > 0 && shootTimer <= 0 && !isReloading)
-    playGunAction(isWalking() ? 2 : 0);
 
-  updateFlashlight(); // <-- key for flashlight direction
-  composer.render();
+  private setupUI(): void {
+    const ui = document.createElement('div');
+    ui.innerHTML = `
+      <div style="position:fixed;top:20px;right:20px;color:#fff;font-family:sans-serif;font-size:16px;text-align:right;z-index:20">
+        <div id="ammoDisplay">Ammo: ${CONFIG.WEAPON.MAX_AMMO} / ${CONFIG.WEAPON.MAX_AMMO}</div>
+        <div id="healthBar" style="margin-top:8px;width:120px;height:16px;border:1px solid #fff">
+          <div id="healthFill" style="background:#f00;width:100%;height:100%"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(ui);
+
+    this.ammoDisplay = document.getElementById('ammoDisplay')!;
+    this.healthFill = document.getElementById('healthFill')! as HTMLDivElement;
+
+    this.setupAimDot();
+  }
+
+  private setupAimDot(): void {
+    const aimDot = document.createElement('div');
+    aimDot.style.cssText = `
+      position:fixed;
+      top:50%;
+      left:50%;
+      width:8px;
+      height:8px;
+      background:#f00;
+      border-radius:50%;
+      transform:translate(-50%,-50%);
+      pointer-events:none;
+      z-index:10
+    `;
+    document.body.appendChild(aimDot);
+  }
+
+  public updateUI(): void {
+    this.ammoDisplay.textContent = `Ammo: ${this.gameState.ammo} / ${this.gameState.maxAmmo}`;
+    this.healthFill.style.width = `${this.gameState.health}%`;
+  }
 }
 
-updateUI();
-animate();
+// Input Manager
+class InputManager {
+  private gameState: GameState;
+  private weaponManager: WeaponManager;
+  private lightingManager: LightingManager;
+  private controls: PointerLockControls;
+
+  constructor(
+    gameState: GameState,
+    weaponManager: WeaponManager,
+    lightingManager: LightingManager,
+    controls: PointerLockControls
+  ) {
+    this.gameState = gameState;
+    this.weaponManager = weaponManager;
+    this.lightingManager = lightingManager;
+    this.controls = controls;
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners(): void {
+    document.addEventListener('keydown', (e) => {
+      this.gameState.keysPressed[e.code] = true;
+      this.handleKeyDown(e.code);
+    });
+
+    document.addEventListener('keyup', (e) => {
+      this.gameState.keysPressed[e.code] = false;
+    });
+
+    document.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this.gameState.isShooting = true;
+    });
+
+    document.addEventListener('mouseup', () => {
+      this.gameState.isShooting = false;
+    });
+
+    document.body.addEventListener('click', () => {
+      this.controls.lock();
+    });
+  }
+
+  private handleKeyDown(code: string): void {
+    switch (code) {
+      case 'KeyR':
+        if (this.weaponManager.canReload()) {
+          this.weaponManager.playGunAction(7);
+        }
+        break;
+      case 'KeyF':
+        this.gameState.flashlightOn = !this.gameState.flashlightOn;
+        this.lightingManager.toggleFlashlight();
+        break;
+    }
+  }
+
+  public isWalking(): boolean {
+    return this.gameState.keysPressed['KeyW'] ||
+      this.gameState.keysPressed['KeyA'] ||
+      this.gameState.keysPressed['KeyS'] ||
+      this.gameState.keysPressed['KeyD'];
+  }
+}
+
+// GameLoadingManager with progress support (optional)
+class GameLoadingManager {
+  public manager: THREE.LoadingManager;
+  private loadingScreen: HTMLElement;
+  private loadingBar: HTMLElement;
+
+  constructor(onLoad: () => void) {
+    this.loadingScreen = document.getElementById('loading-screen')!;
+    this.loadingBar = document.getElementById('loading-bar')!;
+    this.manager = new THREE.LoadingManager();
+
+    this.manager.onStart = () => {
+      this.show();
+      this.setProgress(0);
+    };
+    this.manager.onProgress = (url, itemsLoaded, itemsTotal) => {
+      this.setProgress((itemsLoaded / itemsTotal) * 100);
+    };
+    this.manager.onLoad = () => {
+      this.setProgress(100);
+      setTimeout(() => {
+        this.hide();
+        onLoad();
+      }, 400); // Small delay for UX
+    };
+    this.manager.onError = () => {
+      this.hide();
+      onLoad();
+    };
+  }
+
+  public show() {
+    if (this.loadingScreen) this.loadingScreen.style.display = 'flex';
+  }
+
+  public hide() {
+    if (this.loadingScreen) this.loadingScreen.style.display = 'none';
+  }
+
+  private setProgress(percent: number) {
+    if (this.loadingBar) this.loadingBar.style.width = `${percent}%`;
+  }
+}
+
+// Main Game Class
+class Game {
+  private sceneManager: SceneManager;
+  private gameState: GameState;
+  private lightingManager: LightingManager;
+  private modelManager: ModelManager;
+  private weatherManager: WeatherManager;
+  private weaponManager: WeaponManager;
+  private enemyManager: EnemyManager;
+  private uiManager: UIManager;
+  private inputManager: InputManager;
+  private controls: PointerLockControls;
+  private composer: EffectComposer;
+  private clock: THREE.Clock;
+  private loadingManager: GameLoadingManager;
+  private pointerLockRequested = false;
+
+  constructor(loadingManager: GameLoadingManager) {
+    this.loadingManager = loadingManager;
+    this.initialize();
+  }
+
+  private initialize(): void {
+    this.sceneManager = new SceneManager();
+    this.gameState = new GameState();
+
+    this.lightingManager = new LightingManager(this.sceneManager.scene, this.sceneManager.camera);
+    this.modelManager = new ModelManager(this.sceneManager.scene, this.sceneManager.camera, this.loadingManager.manager);
+    this.weatherManager = new WeatherManager(this.sceneManager.scene);
+    this.weaponManager = new WeaponManager(
+      this.sceneManager.scene,
+      this.sceneManager.camera,
+      this.gameState,
+      this.modelManager,
+      this.lightingManager
+    );
+    this.enemyManager = new EnemyManager(this.gameState, this.modelManager, this.sceneManager.camera);
+    this.uiManager = new UIManager(this.gameState);
+
+    // Controls and input are set up after loading and user click
+    // this.setupControls();
+    // this.inputManager = new InputManager(...);
+
+    this.setupPostProcessing();
+    this.clock = new THREE.Clock();
+    this.setupWindowEvents();
+  }
+
+  public startAfterLoading() {
+    // Setup controls and input after loading and user click
+    this.setupControls();
+    this.inputManager = new InputManager(
+      this.gameState,
+      this.weaponManager,
+      this.lightingManager,
+      this.controls
+    );
+    this.uiManager.updateUI();
+    this.animate();
+  }
+
+  private setupControls(): void {
+    this.controls = new PointerLockControls(this.sceneManager.camera, this.sceneManager.renderer.domElement);
+    this.sceneManager.scene.add(this.controls.object);
+  }
+
+  private setupPostProcessing(): void {
+    this.composer = new EffectComposer(this.sceneManager.renderer);
+    this.composer.addPass(new RenderPass(this.sceneManager.scene, this.sceneManager.camera));
+    this.composer.addPass(new ShaderPass(GammaCorrectionShader));
+  }
+
+  private setupWindowEvents(): void {
+    window.addEventListener('resize', () => {
+      this.sceneManager.camera.aspect = window.innerWidth / window.innerHeight;
+      this.sceneManager.camera.updateProjectionMatrix();
+      this.sceneManager.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+    });
+  }
+
+  private updateMovement(delta: number): void {
+    const direction = new THREE.Vector3();
+    const velocity = new THREE.Vector3();
+
+    if (this.gameState.keysPressed['KeyW']) direction.z += 1;
+    if (this.gameState.keysPressed['KeyS']) direction.z -= 1;
+    if (this.gameState.keysPressed['KeyA']) direction.x -= 1;
+    if (this.gameState.keysPressed['KeyD']) direction.x += 1;
+
+    direction.normalize();
+    velocity.copy(direction).multiplyScalar(CONFIG.MOVEMENT.SPEED * delta);
+    this.controls.moveRight(velocity.x);
+    this.controls.moveForward(velocity.z);
+  }
+
+  private updateWeapon(delta: number): void {
+    if (this.gameState.isShooting && this.weaponManager.canShoot()) {
+      this.weaponManager.shoot();
+      this.gameState.shootTimer = CONFIG.WEAPON.SHOOT_COOLDOWN;
+      this.uiManager.updateUI();
+    }
+
+    this.weaponManager.updateBullets(delta);
+    this.gameState.shootTimer -= delta;
+    this.gameState.reloadTimer -= delta;
+
+    if (this.modelManager.gunActions.length > 0 &&
+      this.gameState.shootTimer <= 0 &&
+      !this.gameState.isReloading) {
+      this.weaponManager.playGunAction(this.inputManager.isWalking() ? 2 : 0);
+    }
+  }
+
+  private updateAnimations(delta: number): void {
+    this.modelManager.gunMixer?.update(delta);
+    this.modelManager.zombieMixer?.update(delta);
+  }
+
+  private animate(): void {
+    requestAnimationFrame(() => this.animate());
+
+    const delta = this.clock.getDelta();
+
+    this.updateMovement(delta);
+    this.updateWeapon(delta);
+    this.updateAnimations(delta);
+    this.weatherManager.updateRain();
+    this.enemyManager.updateZombie();
+    this.lightingManager.updateFlashlight();
+    this.uiManager.updateUI();
+
+    this.composer.render();
+  }
+
+  private start(): void {
+    this.uiManager.updateUI();
+    this.animate();
+  }
+}
+
+
+function main() {
+  const startButton = document.getElementById("start-button") as HTMLElement;
+  const startScreen = document.getElementById("start-screen") as HTMLElement;
+  const loadingScreen = document.getElementById("loading-screen") as HTMLElement;
+  const container = document.getElementById("container") as HTMLElement;
+
+  // Show only the start screen at first
+  startScreen.style.display = "flex";
+  loadingScreen.style.display = "none";
+  container.style.display = "none";
+
+  let game: Game | null = null;
+
+  startButton.addEventListener("click", () => {
+    // Hide start, show loading
+    startScreen.style.display = "none";
+    loadingScreen.style.display = "flex";
+    container.style.display = "block";
+
+    // Create loading manager and load assets
+    const loadingManager = new GameLoadingManager(() => {
+      // After loading is done, show a "Click to Play" overlay
+      loadingScreen.style.display = "none";
+      showClickToPlay(() => {
+        // Only now create and start the game, and enable pointer lock
+        if (!game) {
+          game = new Game(loadingManager);
+        }
+        game.startAfterLoading();
+      });
+    });
+
+    // Start loading assets by creating the Game instance (but don't start game loop yet)
+    game = new Game(loadingManager);
+  });
+
+  function showClickToPlay(onClick: () => void) {
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100vw';
+    overlay.style.height = '100vh';
+    overlay.style.background = 'rgba(0,0,0,0.7)';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '200';
+    overlay.style.color = '#fff';
+    overlay.style.fontSize = '2.5rem';
+    overlay.style.cursor = 'pointer';
+    overlay.innerText = 'Click to Play';
+
+    overlay.addEventListener('click', () => {
+      overlay.remove();
+      onClick();
+    });
+
+    document.body.appendChild(overlay);
+  }
+}
+
+main();
