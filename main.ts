@@ -3,11 +3,10 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { GammaCorrectionShader } from 'three/examples/jsm/shaders/GammaCorrectionShader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
-// Constants
 const CONFIG = {
   CAMERA: {
     FOV: 55,
@@ -28,9 +27,10 @@ const CONFIG = {
     MUZZLE_FLASH_DURATION: 50
   },
   ZOMBIE: {
-    SPEED: 0.05,
-    DAMAGE_RATE: 0.2,
-    MIN_DISTANCE: 0.5
+    SPEED: 0.9, // increased for more visible movement
+    DAMAGE_RATE: 10,
+    MIN_DISTANCE: 0.5,
+    COUNT: 200
   },
   RAIN: {
     COUNT: 1000,
@@ -49,7 +49,17 @@ const CONFIG = {
   }
 };
 
-// Game State
+const GAME_BOUNDS = {
+  minX: -10.46,
+  maxX: 34.43,
+  minZ: -422.50,
+  maxZ: 17.26
+};
+
+function clamp(val: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, val));
+}
+
 class GameState {
   public ammo: number = CONFIG.WEAPON.MAX_AMMO;
   public maxAmmo: number = CONFIG.WEAPON.MAX_AMMO;
@@ -63,7 +73,6 @@ class GameState {
   public keysPressed: Record<string, boolean> = {};
 }
 
-// Scene Setup
 class SceneManager {
   public scene: THREE.Scene;
   public camera: THREE.PerspectiveCamera;
@@ -82,7 +91,6 @@ class SceneManager {
       CONFIG.CAMERA.INITIAL_POSITION.y,
       CONFIG.CAMERA.INITIAL_POSITION.z
     );
-
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
@@ -101,7 +109,6 @@ class SceneManager {
   }
 }
 
-// Lighting System
 class LightingManager {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
@@ -115,17 +122,13 @@ class LightingManager {
   }
 
   private setupLights(): void {
-    // Ambient light
     const ambientLight = new THREE.AmbientLight(0x222244, 0.8);
     this.scene.add(ambientLight);
-
-    // Moon light
     const moonLight = new THREE.DirectionalLight(0x8888ff, 0.5);
     moonLight.position.set(20, 100, 50);
     moonLight.castShadow = true;
     this.scene.add(moonLight);
 
-    // Flashlight
     this.flashlight = new THREE.SpotLight(0xffffff, 100, 50, Math.PI / 6, 0.3, 1.5);
     this.flashlight.shadow.normalBias = 1;
     this.flashlight.castShadow = true;
@@ -133,7 +136,6 @@ class LightingManager {
     this.flashlight.visible = false;
     this.camera.add(this.flashlight);
 
-    // Muzzle flash
     this.muzzleFlash = new THREE.PointLight(0xffaa33, 7, 100);
     this.muzzleFlash.visible = false;
     this.muzzleFlash.castShadow = true;
@@ -163,18 +165,16 @@ class LightingManager {
   }
 }
 
-// Model Manager
 class ModelManager {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private loader: GLTFLoader;
 
-  public zombieMixer?: THREE.AnimationMixer;
-  public zombie?: THREE.Object3D;
+  public zombieMixers: THREE.AnimationMixer[] = [];
+  public zombies: THREE.Object3D[] = [];
   public fpsGun?: THREE.Object3D;
   public gunMixer?: THREE.AnimationMixer;
   public gunActions: THREE.AnimationAction[] = [];
-  // Add loadingManager
   constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, loadingManager: THREE.LoadingManager) {
     this.scene = scene;
     this.camera = camera;
@@ -190,12 +190,10 @@ class ModelManager {
 
   private loadMap(): void {
     this.loader.load('/map.glb', (gltf) => {
-      gltf.scene.traverse((o) => {
+      gltf.scene.traverse((o: any) => {
         o.castShadow = o.receiveShadow = true;
-        // play 0'th animation
         if (o.animations && o.animations.length > 0) {
           const mixer = new THREE.AnimationMixer(o);
-          console.log('Playing animation:', o.animations[0].name);
           mixer.clipAction(o.animations[1]).play();
         }
         if ((o as THREE.PointLight).isLight) {
@@ -209,16 +207,32 @@ class ModelManager {
 
   private loadZombie(): void {
     this.loader.load('/zombie_hazmat.glb', (gltf) => {
-      const model = gltf.scene;
-      model.scale.set(1.5, 1.5, 1.5);
-      model.position.y = 0.05;
-      model.traverse((child) => {
-        child.castShadow = child.receiveShadow = true;
-      });
-      this.zombieMixer = new THREE.AnimationMixer(model);
-      this.zombieMixer.clipAction(gltf.animations[3]).play().timeScale = 2;
-      this.zombie = model;
-      this.scene.add(model);
+      for (let i = 0; i < CONFIG.ZOMBIE.COUNT; i++) {
+        const model = SkeletonUtils.clone(gltf.scene);
+        model.scale.set(1.5, 1.5, 1.5);
+
+        let x, z;
+        do {
+          x = THREE.MathUtils.randFloat(GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
+          z = THREE.MathUtils.randFloat(GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
+        } while (Math.abs(x) < 5 && Math.abs(z - CONFIG.CAMERA.INITIAL_POSITION.z) < 10);
+
+        model.position.set(x, 0.05, z);
+
+        model.traverse((child: any) => {
+          child.castShadow = child.receiveShadow = true;
+        });
+
+        const mixer = new THREE.AnimationMixer(model);
+        const walkAnim = gltf.animations.find(a => a.name.toLowerCase().includes('walk')) || gltf.animations[0];
+        const action = mixer.clipAction(walkAnim);
+        action.play();
+        action.timeScale = 2;
+
+        this.zombieMixers.push(mixer);
+        this.zombies.push(model);
+        this.scene.add(model);
+      }
     });
   }
 
@@ -228,7 +242,7 @@ class ModelManager {
       this.fpsGun.scale.set(0.8, 0.8, 0.8);
       this.fpsGun.position.set(0.2, -0.5, -0.3);
       this.fpsGun.rotation.y = THREE.MathUtils.degToRad(-180);
-      this.fpsGun.traverse((child) => {
+      this.fpsGun.traverse((child: any) => {
         child.castShadow = child.receiveShadow = true;
       });
       this.gunMixer = new THREE.AnimationMixer(this.fpsGun);
@@ -238,7 +252,6 @@ class ModelManager {
   }
 }
 
-// Weather System
 class WeatherManager {
   private scene: THREE.Scene;
   private rainGroup: THREE.InstancedMesh;
@@ -263,7 +276,6 @@ class WeatherManager {
       roughness: 0.85,
       side: THREE.DoubleSide
     });
-
     this.rainGroup = new THREE.InstancedMesh(rainGeometry, rainMaterial, CONFIG.RAIN.COUNT);
     this.rainPositions = new Float32Array(CONFIG.RAIN.COUNT * 3);
     this.rainVelocities = new Float32Array(CONFIG.RAIN.COUNT);
@@ -277,7 +289,6 @@ class WeatherManager {
       metalness: 0.4,
       side: THREE.FrontSide
     });
-
     this.splashGroup = new THREE.InstancedMesh(splashGeometry, splashMaterial, CONFIG.RAIN.COUNT);
     this.splashTimers = new Float32Array(CONFIG.RAIN.COUNT);
 
@@ -356,7 +367,6 @@ class WeatherManager {
   }
 }
 
-// Weapon System
 class WeaponManager {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
@@ -398,6 +408,7 @@ class WeaponManager {
     if (idx === 7) {
       this.gameState.reloadTimer = CONFIG.WEAPON.RELOAD_TIME;
       this.gameState.isReloading = true;
+      playReloadSound();
       setTimeout(() => {
         this.gameState.ammo = this.gameState.maxAmmo;
         this.gameState.isReloading = false;
@@ -418,13 +429,14 @@ class WeaponManager {
     this.scene.add(bullet);
 
     this.lightingManager.showMuzzleFlash();
+
+    playShotSound();
   }
 
   public updateBullets(delta: number): void {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const bullet = this.bullets[i];
       bullet.position.add(bullet.userData.velocity.clone().multiplyScalar(delta * CONFIG.BULLET.SPEED));
-
       if (bullet.position.length() > CONFIG.BULLET.MAX_DISTANCE) {
         this.scene.remove(bullet);
         this.bullets.splice(i, 1);
@@ -441,11 +453,11 @@ class WeaponManager {
   }
 }
 
-// Enemy AI
 class EnemyManager {
   private gameState: GameState;
   private modelManager: ModelManager;
   private camera: THREE.PerspectiveCamera;
+  private zombieSoundStarted = false;
 
   constructor(gameState: GameState, modelManager: ModelManager, camera: THREE.PerspectiveCamera) {
     this.gameState = gameState;
@@ -453,23 +465,37 @@ class EnemyManager {
     this.camera = camera;
   }
 
-  public updateZombie(): void {
-    if (!this.modelManager.zombie) return;
+  public updateZombie(delta: number): void {
+    if (!this.modelManager.zombies.length) return;
 
-    const direction = new THREE.Vector3().subVectors(this.camera.position, this.modelManager.zombie.position);
-    direction.y = 0;
-    const distance = direction.length();
+    for (let i = 0; i < this.modelManager.zombies.length; i++) {
+      const zombie = this.modelManager.zombies[i];
 
-    if (distance > CONFIG.ZOMBIE.MIN_DISTANCE) {
-      this.modelManager.zombie.position.add(direction.normalize().multiplyScalar(CONFIG.ZOMBIE.SPEED));
-      this.modelManager.zombie.lookAt(this.camera.position.x, this.modelManager.zombie.position.y, this.camera.position.z);
-    } else if (this.gameState.health > 0) {
-      this.gameState.health -= CONFIG.ZOMBIE.DAMAGE_RATE;
+      if (i === 0 && !this.zombieSoundStarted && zombieAudioBuffer) {
+        playZombieSoundAt(zombie.position, this.camera);
+        this.zombieSoundStarted = true;
+      }
+      if (i === 0 && this.zombieSoundStarted) {
+        updateZombieSoundPosition(zombie, this.camera);
+      }
+
+      const direction = new THREE.Vector3().subVectors(this.camera.position, zombie.position);
+      direction.y = 0;
+      const distance = direction.length();
+
+      if (distance > CONFIG.ZOMBIE.MIN_DISTANCE) {
+        zombie.position.add(direction.normalize().multiplyScalar(CONFIG.ZOMBIE.SPEED * delta));
+        zombie.lookAt(this.camera.position.x, zombie.position.y, this.camera.position.z);
+      } else if (this.gameState.health > 0) {
+        this.gameState.health -= CONFIG.ZOMBIE.DAMAGE_RATE * delta;
+      }
+
+      zombie.position.x = clamp(zombie.position.x, GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
+      zombie.position.z = clamp(zombie.position.z, GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
     }
   }
 }
 
-// UI Manager
 class UIManager {
   private gameState: GameState;
   private ammoDisplay: HTMLElement;
@@ -521,7 +547,6 @@ class UIManager {
   }
 }
 
-// Input Manager
 class InputManager {
   private gameState: GameState;
   private weaponManager: WeaponManager;
@@ -586,7 +611,6 @@ class InputManager {
   }
 }
 
-// GameLoadingManager with progress support (optional)
 class GameLoadingManager {
   public manager: THREE.LoadingManager;
   private loadingScreen: HTMLElement;
@@ -609,7 +633,7 @@ class GameLoadingManager {
       setTimeout(() => {
         this.hide();
         onLoad();
-      }, 400); // Small delay for UX
+      }, 400);
     };
     this.manager.onError = () => {
       this.hide();
@@ -630,7 +654,6 @@ class GameLoadingManager {
   }
 }
 
-// Main Game Class
 class Game {
   private sceneManager: SceneManager;
   private gameState: GameState;
@@ -645,7 +668,6 @@ class Game {
   private composer: EffectComposer;
   private clock: THREE.Clock;
   private loadingManager: GameLoadingManager;
-  private pointerLockRequested = false;
 
   constructor(loadingManager: GameLoadingManager) {
     this.loadingManager = loadingManager;
@@ -655,7 +677,6 @@ class Game {
   private initialize(): void {
     this.sceneManager = new SceneManager();
     this.gameState = new GameState();
-
     this.lightingManager = new LightingManager(this.sceneManager.scene, this.sceneManager.camera);
     this.modelManager = new ModelManager(this.sceneManager.scene, this.sceneManager.camera, this.loadingManager.manager);
     this.weatherManager = new WeatherManager(this.sceneManager.scene);
@@ -668,15 +689,12 @@ class Game {
     );
     this.enemyManager = new EnemyManager(this.gameState, this.modelManager, this.sceneManager.camera);
     this.uiManager = new UIManager(this.gameState);
-
-
     this.setupPostProcessing();
     this.clock = new THREE.Clock();
     this.setupWindowEvents();
   }
 
   public startAfterLoading() {
-    // Setup controls and input after loading and user click
     this.setupControls();
     this.inputManager = new InputManager(
       this.gameState,
@@ -721,6 +739,10 @@ class Game {
     velocity.copy(direction).multiplyScalar(CONFIG.MOVEMENT.SPEED * delta);
     this.controls.moveRight(velocity.x);
     this.controls.moveForward(velocity.z);
+
+    const pos = this.sceneManager.camera.position;
+    pos.x = clamp(pos.x, GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
+    pos.z = clamp(pos.z, GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
   }
 
   private updateWeapon(delta: number): void {
@@ -743,7 +765,11 @@ class Game {
 
   private updateAnimations(delta: number): void {
     this.modelManager.gunMixer?.update(delta);
-    this.modelManager.zombieMixer?.update(delta);
+    if (this.modelManager.zombieMixers) {
+      for (const mixer of this.modelManager.zombieMixers) {
+        mixer.update(delta);
+      }
+    }
   }
 
   private animate(): void {
@@ -755,54 +781,146 @@ class Game {
     this.updateWeapon(delta);
     this.updateAnimations(delta);
     this.weatherManager.updateRain();
-    this.enemyManager.updateZombie();
+    this.enemyManager.updateZombie(delta);
     this.lightingManager.updateFlashlight();
     this.uiManager.updateUI();
 
     this.composer.render();
   }
+}
 
-  private start(): void {
-    this.uiManager.updateUI();
-    this.animate();
+// -- Audio and main code unchanged from your original (not shown for brevity) --
+
+let rainAudio: HTMLAudioElement;
+function setupRainAudio() {
+  rainAudio = document.createElement('audio');
+  rainAudio.src = '/rain.mpeg';
+  rainAudio.loop = true;
+  rainAudio.volume = 0.5;
+  rainAudio.style.display = 'none';
+  document.body.appendChild(rainAudio);
+}
+
+let shotAudio: HTMLAudioElement;
+function setupShotAudio() {
+  shotAudio = document.createElement('audio');
+  shotAudio.src = '/shot.mp3';
+  shotAudio.volume = 0.5;
+  shotAudio.preload = 'auto';
+  document.body.appendChild(shotAudio);
+}
+function playShotSound() {
+  const audio = document.createElement('audio');
+  audio.src = '/shot.mp3';
+  audio.volume = 0.7;
+  audio.autoplay = true;
+  audio.style.display = 'none';
+  document.body.appendChild(audio);
+  audio.addEventListener('ended', () => {
+    audio.remove();
+  });
+}
+function playReloadSound() {
+  const audio = document.createElement('audio');
+  audio.src = '/reload.mp3';
+  audio.volume = 0.7;
+  audio.autoplay = true;
+  audio.style.display = 'none';
+  document.body.appendChild(audio);
+  audio.addEventListener('ended', () => {
+    audio.remove();
+  });
+}
+
+// Positional zombie sound
+let zombieAudioContext: AudioContext | null = null;
+let zombieAudioBuffer: AudioBuffer | null = null;
+let zombieSource: AudioBufferSourceNode | null = null;
+let zombiePanner: PannerNode | null = null;
+
+async function loadZombieAudioBuffer() {
+  if (!zombieAudioContext) zombieAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const response = await fetch('/zombie.mp3');
+  const arrayBuffer = await response.arrayBuffer();
+  zombieAudioBuffer = await zombieAudioContext.decodeAudioData(arrayBuffer);
+}
+function playZombieSoundAt(position: THREE.Vector3, camera: THREE.PerspectiveCamera) {
+  if (!zombieAudioContext || !zombieAudioBuffer) return;
+  if (zombieSource) {
+    zombieSource.stop();
+    zombieSource.disconnect();
+    zombieSource = null;
+  }
+  if (zombiePanner) {
+    zombiePanner.disconnect();
+    zombiePanner = null;
+  }
+  zombieSource = zombieAudioContext.createBufferSource();
+  zombieSource.buffer = zombieAudioBuffer;
+  zombieSource.loop = true;
+
+  zombiePanner = zombieAudioContext.createPanner();
+  zombiePanner.panningModel = 'HRTF';
+  zombiePanner.distanceModel = 'linear';
+  zombiePanner.refDistance = 1;
+  zombiePanner.maxDistance = 100;
+  zombiePanner.rolloffFactor = 1;
+  zombiePanner.setPosition(position.x, position.y, position.z);
+
+  zombieSource.connect(zombiePanner).connect(zombieAudioContext.destination);
+  zombieSource.start(0);
+
+  updateZombieAudioListener(camera);
+}
+function updateZombieAudioListener(camera: THREE.PerspectiveCamera) {
+  if (!zombieAudioContext) return;
+  const listener = zombieAudioContext.listener;
+  const pos = camera.position;
+  listener.setPosition(pos.x, pos.y, pos.z);
+
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  listener.setOrientation(forward.x, forward.y, forward.z, 0, 1, 0);
+}
+function updateZombieSoundPosition(zombie: THREE.Object3D, camera: THREE.PerspectiveCamera) {
+  if (zombiePanner) {
+    zombiePanner.setPosition(zombie.position.x, zombie.position.y, zombie.position.z);
+    updateZombieAudioListener(camera);
   }
 }
 
-
 function main() {
+  setupRainAudio();
+  setupShotAudio();
   const startButton = document.getElementById("start-button") as HTMLElement;
   const startScreen = document.getElementById("start-screen") as HTMLElement;
   const loadingScreen = document.getElementById("loading-screen") as HTMLElement;
   const container = document.getElementById("container") as HTMLElement;
 
-  // Show only the start screen at first
   startScreen.style.display = "flex";
   loadingScreen.style.display = "none";
   container.style.display = "none";
-
   let game: Game | null = null;
 
   startButton.addEventListener("click", () => {
-    // Hide start, show loading
     startScreen.style.display = "none";
     loadingScreen.style.display = "flex";
     container.style.display = "block";
 
-    // Create loading manager and load assets
     const loadingManager = new GameLoadingManager(() => {
-      // After loading is done, show a "Click to Play" overlay
       loadingScreen.style.display = "none";
-      showClickToPlay(() => {
-        // Only now create and start the game, and enable pointer lock
+      showClickToPlay(async () => {
         if (!game) {
           game = new Game(loadingManager);
+          (window as any).game = game;
         }
+        if (rainAudio) rainAudio.play();
+        await loadZombieAudioBuffer();
         game.startAfterLoading();
       });
     });
-
-    // Start loading assets by creating the Game instance (but don't start game loop yet)
     game = new Game(loadingManager);
+    (window as any).game = game;
   });
 
   function showClickToPlay(onClick: () => void) {
@@ -830,5 +948,4 @@ function main() {
     document.body.appendChild(overlay);
   }
 }
-
 main();

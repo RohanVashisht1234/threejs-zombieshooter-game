@@ -43,6 +43,9 @@ https://sketchfab.com/3d-models/prototipo-speciale-police-95-low-poly-model-63aa
 https://sketchfab.com/3d-models/crashed-abandoned-car-game-ready-66ef51a84c9843dda53bf0b4b9020011#download
 
 
+https://sketchfab.com/3d-models/armored-police-car-fdc5db626e3a4c89b51067e3d767c6fa
+
+
 electric box:
 
-https://sketchfab.com/3d-models/electric-box-scan-no-11-253d13523bfc44f8b74563295f22ac78#download
+https://sketchfab.com/3d-models/electric-box-c7bba1e774d94e67b410e4c9fdfdee34#download
