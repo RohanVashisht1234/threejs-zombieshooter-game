@@ -33,3 +33,16 @@ https://sketchfab.com/3d-models/stormer-ad-air-defence-war-thunder-4cd11ad037bd4
 https://sketchfab.com/3d-models/boeing-e-767-free-59c0f841c24a471597aa7fe81b930cdd
 
 https://sketchfab.com/3d-models/renault-trm-radar-truck-1ad95e5724624a3bba7d36a686817efc
+
+https://sketchfab.com/3d-models/sand-bags-e02685e0047948aabc75227cb1962d05#download
+
+police car
+
+https://sketchfab.com/3d-models/prototipo-speciale-police-95-low-poly-model-63aa215521334cef9c4d8c4c391252ad
+
+https://sketchfab.com/3d-models/crashed-abandoned-car-game-ready-66ef51a84c9843dda53bf0b4b9020011#download
+
+
+electric box:
+
+https://sketchfab.com/3d-models/electric-box-scan-no-11-253d13523bfc44f8b74563295f22ac78#download

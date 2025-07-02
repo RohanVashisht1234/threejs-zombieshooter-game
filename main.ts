@@ -86,7 +86,7 @@ class SceneManager {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
-      precision: 'highp'
+      precision: 'mediump'
     });
     this.setupRenderer();
   }
@@ -192,6 +192,12 @@ class ModelManager {
     this.loader.load('/map.glb', (gltf) => {
       gltf.scene.traverse((o) => {
         o.castShadow = o.receiveShadow = true;
+        // play 0'th animation
+        if (o.animations && o.animations.length > 0) {
+          const mixer = new THREE.AnimationMixer(o);
+          console.log('Playing animation:', o.animations[0].name);
+          mixer.clipAction(o.animations[1]).play();
+        }
         if ((o as THREE.PointLight).isLight) {
           (o as THREE.PointLight).shadow.bias = -0.0009;
         }
@@ -378,7 +384,7 @@ class WeaponManager {
 
   private setupBullets(): void {
     this.bulletGeometry = new THREE.SphereGeometry(0.05, 4, 4);
-    this.bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    this.bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xfff000 });
   }
 
   public playGunAction(idx: number): void {
@@ -663,9 +669,6 @@ class Game {
     this.enemyManager = new EnemyManager(this.gameState, this.modelManager, this.sceneManager.camera);
     this.uiManager = new UIManager(this.gameState);
 
-    // Controls and input are set up after loading and user click
-    // this.setupControls();
-    // this.inputManager = new InputManager(...);
 
     this.setupPostProcessing();
     this.clock = new THREE.Clock();
