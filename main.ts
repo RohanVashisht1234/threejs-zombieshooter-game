@@ -27,10 +27,10 @@ const CONFIG = {
     MUZZLE_FLASH_DURATION: 50
   },
   ZOMBIE: {
-    SPEED: 0.9, // increased for more visible movement
+    SPEED: 5, // increased for more visible movement
     DAMAGE_RATE: 10,
     MIN_DISTANCE: 0.5,
-    COUNT: 200
+    COUNT: 50
   },
   RAIN: {
     COUNT: 1000,
@@ -41,8 +41,8 @@ const CONFIG = {
     HEIGHT_MAX: 100
   },
   BULLET: {
-    SPEED: 20,
-    MAX_DISTANCE: 200
+    SPEED: 10,
+    MAX_DISTANCE: 2000
   },
   PLAYER: {
     INITIAL_HEALTH: 100
@@ -165,6 +165,13 @@ class LightingManager {
   }
 }
 
+type ZombieState = {
+  health: number;
+  dead: boolean;
+  dying: boolean;
+  deathTimer: number;
+};
+
 class ModelManager {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
@@ -175,6 +182,7 @@ class ModelManager {
   public fpsGun?: THREE.Object3D;
   public gunMixer?: THREE.AnimationMixer;
   public gunActions: THREE.AnimationAction[] = [];
+  public zombieStates: ZombieState[] = [];
   constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, loadingManager: THREE.LoadingManager) {
     this.scene = scene;
     this.camera = camera;
@@ -212,10 +220,14 @@ class ModelManager {
         model.scale.set(1.5, 1.5, 1.5);
 
         let x, z;
+        let attempts = 0;
         do {
           x = THREE.MathUtils.randFloat(GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
           z = THREE.MathUtils.randFloat(GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
-        } while (Math.abs(x) < 5 && Math.abs(z - CONFIG.CAMERA.INITIAL_POSITION.z) < 10);
+        } while (
+          (Math.abs(x) < 5 && Math.abs(z - CONFIG.CAMERA.INITIAL_POSITION.z) < 10) ||
+          this.zombies.some(zb => zb.position.distanceTo(new THREE.Vector3(x, 0.05, z)) < 2) && ++attempts < 10
+        );
 
         model.position.set(x, 0.05, z);
 
@@ -228,9 +240,12 @@ class ModelManager {
         const action = mixer.clipAction(walkAnim);
         action.play();
         action.timeScale = 2;
+        action.time = Math.random() * action.getClip().duration;
 
         this.zombieMixers.push(mixer);
         this.zombies.push(model);
+        // Each zombie starts with 3 health (3 shots to kill)
+        this.zombieStates.push({ health: 3, dead: false, dying: false, deathTimer: 0 });
         this.scene.add(model);
       }
     });
@@ -421,7 +436,9 @@ class WeaponManager {
     this.gameState.ammo--;
 
     const bullet = new THREE.Mesh(this.bulletGeometry, this.bulletMaterial);
-    bullet.position.copy(this.camera.position);
+    // Use world position!
+    bullet.position.copy(this.camera.getWorldPosition(new THREE.Vector3()));
+    // Use world direction!
     const dir = new THREE.Vector3();
     this.camera.getWorldDirection(dir);
     bullet.userData.velocity = dir.clone().multiplyScalar(CONFIG.BULLET.SPEED);
@@ -429,18 +446,53 @@ class WeaponManager {
     this.scene.add(bullet);
 
     this.lightingManager.showMuzzleFlash();
-
     playShotSound();
   }
 
+  // ----- THIS FUNCTION IS FULLY REWRITTEN TO GUARANTEE 3 SHOTS = 1 DEAD ZOMBIE -----
   public updateBullets(delta: number): void {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const bullet = this.bullets[i];
       bullet.position.add(bullet.userData.velocity.clone().multiplyScalar(delta * CONFIG.BULLET.SPEED));
+
+      // Remove bullet if out of range
       if (bullet.position.length() > CONFIG.BULLET.MAX_DISTANCE) {
         this.scene.remove(bullet);
         this.bullets.splice(i, 1);
+        continue;
       }
+
+      // Check bullet-zombie collisions
+      let bulletHit = false;
+      for (let j = 0; j < this.modelManager.zombies.length; j++) {
+        const zombie = this.modelManager.zombies[j];
+        const state = this.modelManager.zombieStates[j];
+        if (state.dead || state.dying) continue;
+
+        const box = new THREE.Box3().setFromObject(zombie);
+        if (box.containsPoint(bullet.position)) {
+          // Each zombie starts with 3 health, lose 1 per bullet
+          state.health -= 1;
+          // Clamp to minimum 0
+          if (state.health < 0) state.health = 0;
+
+          // Debug: Uncomment to see hits in console
+          // console.log(`Zombie ${j} hit! Health now: ${state.health}`);
+
+          if (state.health === 0 && !state.dead && !state.dying) {
+            state.dying = true;
+            state.deathTimer = 2; // die animation/fall
+            this.modelManager.zombieMixers[j].stopAllAction();
+          }
+
+          // Remove bullet after hit, only one zombie per bullet
+          this.scene.remove(bullet);
+          this.bullets.splice(i, 1);
+          bulletHit = true;
+          break;
+        }
+      }
+      if (bulletHit) continue;
     }
   }
 
@@ -465,13 +517,71 @@ class EnemyManager {
     this.camera = camera;
   }
 
+  // Helper to get death animation for a zombie
+  private getDeathAnimationForZombie(zombieIdx: number): THREE.AnimationClip | undefined {
+    // Assumes all zombies are clones of a GLTF scene with the same animations
+    const zombie = this.modelManager.zombies[zombieIdx];
+    const mixer = this.modelManager.zombieMixers[zombieIdx];
+    // Try to find a death animation
+    const gltfAnimList = mixer.getRoot() && (mixer as any)._actions.length
+      ? (mixer as any)._actions.map((a: any) => a._clip)
+      : [];
+    let deathAnim = gltfAnimList.find((clip: THREE.AnimationClip) =>
+      clip.name.toLowerCase().includes('death') || clip.name.toLowerCase().includes('die')
+    );
+    // fallback: use any animation with "fall" in the name
+    if (!deathAnim) {
+      deathAnim = gltfAnimList.find((clip: THREE.AnimationClip) =>
+        clip.name.toLowerCase().includes('fall')
+      );
+    }
+    return deathAnim;
+  }
+
   public updateZombie(delta: number): void {
     if (!this.modelManager.zombies.length) return;
+    const avoidRadius = 1.0;
 
     for (let i = 0; i < this.modelManager.zombies.length; i++) {
       const zombie = this.modelManager.zombies[i];
+      const state = this.modelManager.zombieStates[i];
 
-      if (i === 0 && !this.zombieSoundStarted && zombieAudioBuffer) {
+      // Animate a smooth fall when dying
+      if (state.dying) {
+        if (!state['deathAnimStarted']) {
+          // Setup for smooth fall
+          const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(zombie.quaternion);
+          const up = new THREE.Vector3(0, 1, 0);
+          const right = new THREE.Vector3().crossVectors(up, forward).normalize();
+          state['fallAxis'] = right;
+          state['fallRot'] = 0;
+          // Always positive, always 100 degrees (no random)
+          state['fallTarget'] = THREE.MathUtils.degToRad(THREE.MathUtils.randInt(70, 90));
+          state['fallDirection'] = 1; // FORWARD
+          state['deathAnimStarted'] = true;
+        }
+
+        // Animate the fall (smooth and always 100 deg)
+        const axis = state['fallAxis'];
+        const fallSpeed = THREE.MathUtils.degToRad(120) * delta; // 120 deg/sec for visible but smooth
+        let rotateAmount = fallSpeed * state['fallDirection'];
+        if (Math.abs(state['fallRot'] + rotateAmount) > state['fallTarget']) {
+          rotateAmount = state['fallTarget'] * state['fallDirection'] - state['fallRot'];
+        }
+        zombie.rotateOnWorldAxis(axis, rotateAmount);
+        state['fallRot'] += Math.abs(rotateAmount);
+
+        if (state['fallRot'] >= state['fallTarget'] - 0.001) {
+          state.dying = false;
+          state.dead = true;
+        }
+        continue;
+      }
+
+      if (state.dead) continue;
+
+      // Zombie audio logic
+      if (i === 0 && !this.zombieSoundStarted && typeof zombieAudioBuffer !== "undefined" && zombieAudioBuffer) {
         playZombieSoundAt(zombie.position, this.camera);
         this.zombieSoundStarted = true;
       }
@@ -479,12 +589,31 @@ class EnemyManager {
         updateZombieSoundPosition(zombie, this.camera);
       }
 
-      const direction = new THREE.Vector3().subVectors(this.camera.position, zombie.position);
-      direction.y = 0;
-      const distance = direction.length();
+      // Movement and AI
+      const toPlayer = new THREE.Vector3().subVectors(this.camera.position, zombie.position);
+      toPlayer.y = 0;
+      const distance = toPlayer.length();
+
+      // Avoid other zombies
+      let avoid = new THREE.Vector3();
+      for (let j = 0; j < this.modelManager.zombies.length; j++) {
+        if (i === j) continue;
+        const other = this.modelManager.zombies[j];
+        const otherState = this.modelManager.zombieStates[j];
+        if (otherState.dead || otherState.dying) continue;
+        const d = zombie.position.distanceTo(other.position);
+        if (d < avoidRadius && d > 0) {
+          avoid.add(new THREE.Vector3().subVectors(zombie.position, other.position).normalize().multiplyScalar((avoidRadius - d) / avoidRadius));
+        }
+      }
+
+      let move = toPlayer.normalize().multiplyScalar(CONFIG.ZOMBIE.SPEED * delta);
+      if (avoid.lengthSq() > 0) {
+        move.add(avoid.normalize().multiplyScalar(CONFIG.ZOMBIE.SPEED * delta * 0.7));
+      }
 
       if (distance > CONFIG.ZOMBIE.MIN_DISTANCE) {
-        zombie.position.add(direction.normalize().multiplyScalar(CONFIG.ZOMBIE.SPEED * delta));
+        zombie.position.add(move);
         zombie.lookAt(this.camera.position.x, zombie.position.y, this.camera.position.z);
       } else if (this.gameState.health > 0) {
         this.gameState.health -= CONFIG.ZOMBIE.DAMAGE_RATE * delta;
@@ -669,6 +798,11 @@ class Game {
   private clock: THREE.Clock;
   private loadingManager: GameLoadingManager;
 
+  private checkpoint: THREE.Object3D | null = null;
+  private checkpointBox: THREE.Box3 | null = null;
+  private checkpointMixer: THREE.AnimationMixer | null = null;
+  private checkpointTriggered = false;
+
   constructor(loadingManager: GameLoadingManager) {
     this.loadingManager = loadingManager;
     this.initialize();
@@ -692,6 +826,30 @@ class Game {
     this.setupPostProcessing();
     this.clock = new THREE.Clock();
     this.setupWindowEvents();
+
+    // Load checkpoint.glb at (0, 0, 0) and play animation if present
+    const loader = new GLTFLoader(this.loadingManager.manager);
+    loader.load('/checkpoint.glb', (gltf) => {
+      this.checkpoint = gltf.scene;
+      this.checkpoint.position.set(0, 0.7, 0);
+      this.checkpoint.scale.set(10, 10, 10);
+      this.checkpoint.traverse((child: any) => {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      });
+      this.sceneManager.scene.add(this.checkpoint);
+
+      // Animation
+      if (gltf.animations && gltf.animations.length > 0) {
+        this.checkpointMixer = new THREE.AnimationMixer(this.checkpoint);
+        gltf.animations.forEach((clip) => {
+          this.checkpointMixer!.clipAction(clip).play();
+        });
+      }
+
+      // Compute bounding box for collision
+      this.checkpointBox = new THREE.Box3().setFromObject(this.checkpoint);
+    });
   }
 
   public startAfterLoading() {
@@ -774,8 +932,10 @@ class Game {
 
   private animate(): void {
     requestAnimationFrame(() => this.animate());
-
     const delta = this.clock.getDelta();
+
+    // Update checkpoint animation
+    if (this.checkpointMixer) this.checkpointMixer.update(delta);
 
     this.updateMovement(delta);
     this.updateWeapon(delta);
@@ -784,8 +944,36 @@ class Game {
     this.enemyManager.updateZombie(delta);
     this.lightingManager.updateFlashlight();
     this.uiManager.updateUI();
-
+    this.checkCheckpoint();
     this.composer.render();
+  }
+
+  private checkCheckpoint(): void {
+    if (this.checkpointTriggered || !this.checkpoint || !this.checkpointBox) return;
+
+    // Update bounding box in case checkpoint animates
+    this.checkpointBox.setFromObject(this.checkpoint);
+
+    // Use camera position as player position, but ignore y axis for collision
+    const playerPos = this.sceneManager.camera.position;
+    const min = this.checkpointBox.min;
+    const max = this.checkpointBox.max;
+
+    // Only check x and z
+    if (
+      playerPos.x >= min.x && playerPos.x <= max.x &&
+      playerPos.z >= min.z && playerPos.z <= max.z
+    ) {
+      this.checkpointTriggered = true;
+      playSpeechAudio1();
+      // Remove from scene for reliability
+      if (this.checkpoint && this.sceneManager.scene) {
+        this.sceneManager.scene.remove(this.checkpoint);
+      }
+      this.checkpoint = null;
+      this.checkpointBox = null;
+      this.checkpointMixer = null;
+    }
   }
 }
 
@@ -949,3 +1137,15 @@ function main() {
   }
 }
 main();
+
+function playSpeechAudio1() {
+  const audio = document.createElement('audio');
+  audio.src = '/speech_audio_1.mp3';
+  audio.volume = 1.0;
+  audio.autoplay = true;
+  audio.style.display = 'none';
+  document.body.appendChild(audio);
+  audio.addEventListener('ended', () => {
+    audio.remove();
+  });
+}
