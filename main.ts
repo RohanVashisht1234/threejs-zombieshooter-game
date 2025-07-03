@@ -30,7 +30,7 @@ const CONFIG = {
     SPEED: 5, // increased for more visible movement
     DAMAGE_RATE: 10,
     MIN_DISTANCE: 0.5,
-    COUNT: 50
+    COUNT: 80
   },
   RAIN: {
     COUNT: 1000,
@@ -359,6 +359,9 @@ class WeatherManager {
   private rainPositions: Float32Array;
   private rainVelocities: Float32Array;
   private splashTimers: Float32Array;
+  // Cover the whole map, not just a block
+  private rainAreaMin = { x: GAME_BOUNDS.minX, z: GAME_BOUNDS.minZ };
+  private rainAreaMax = { x: GAME_BOUNDS.maxX, z: GAME_BOUNDS.maxZ };
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -392,16 +395,18 @@ class WeatherManager {
     this.splashGroup = new THREE.InstancedMesh(splashGeometry, splashMaterial, CONFIG.RAIN.COUNT);
     this.splashTimers = new Float32Array(CONFIG.RAIN.COUNT);
 
+    // Initialize rain over the whole map
     this.initializeRainDrops();
     this.scene.add(this.rainGroup);
     this.scene.add(this.splashGroup);
   }
 
+  // Spawn rain randomly over the whole map area
   private initializeRainDrops(): void {
     for (let i = 0; i < CONFIG.RAIN.COUNT; i++) {
-      this.rainPositions[i * 3 + 0] = THREE.MathUtils.randFloat(-CONFIG.RAIN.SPAWN_RANGE, CONFIG.RAIN.SPAWN_RANGE);
-      this.rainPositions[i * 3 + 1] = THREE.MathUtils.randFloat(0, 100);
-      this.rainPositions[i * 3 + 2] = THREE.MathUtils.randFloat(-CONFIG.RAIN.SPAWN_RANGE, CONFIG.RAIN.SPAWN_RANGE);
+      this.rainPositions[i * 3 + 0] = THREE.MathUtils.randFloat(this.rainAreaMin.x, this.rainAreaMax.x);
+      this.rainPositions[i * 3 + 1] = THREE.MathUtils.randFloat(CONFIG.RAIN.HEIGHT_MIN, CONFIG.RAIN.HEIGHT_MAX);
+      this.rainPositions[i * 3 + 2] = THREE.MathUtils.randFloat(this.rainAreaMin.z, this.rainAreaMax.z);
       this.rainVelocities[i] = THREE.MathUtils.randFloat(CONFIG.RAIN.FALL_SPEED_MIN, CONFIG.RAIN.FALL_SPEED_MAX);
       this.rainGroup.setMatrixAt(i, new THREE.Matrix4().setPosition(
         this.rainPositions[i * 3 + 0],
@@ -427,7 +432,8 @@ class WeatherManager {
     this.scene.add(ground);
   }
 
-  public updateRain(): void {
+  // Remove camera-following logic, just update rain and respawn in the whole map area
+  public updateRain(_cameraPosition: THREE.Vector3): void {
     const tempMatrix = new THREE.Matrix4();
     const tempSplashMatrix = new THREE.Matrix4();
 
@@ -436,9 +442,10 @@ class WeatherManager {
 
       if (this.rainPositions[i * 3 + 1] < 0) {
         this.splashTimers[i] = 0.3;
-        this.rainPositions[i * 3 + 0] = THREE.MathUtils.randFloat(-CONFIG.RAIN.SPAWN_RANGE, CONFIG.RAIN.SPAWN_RANGE);
+        // Respawn anywhere in the map area
+        this.rainPositions[i * 3 + 0] = THREE.MathUtils.randFloat(this.rainAreaMin.x, this.rainAreaMax.x);
         this.rainPositions[i * 3 + 1] = THREE.MathUtils.randFloat(CONFIG.RAIN.HEIGHT_MIN, CONFIG.RAIN.HEIGHT_MAX);
-        this.rainPositions[i * 3 + 2] = THREE.MathUtils.randFloat(-CONFIG.RAIN.SPAWN_RANGE, CONFIG.RAIN.SPAWN_RANGE);
+        this.rainPositions[i * 3 + 2] = THREE.MathUtils.randFloat(this.rainAreaMin.z, this.rainAreaMax.z);
       }
 
       tempMatrix.setPosition(
@@ -1073,7 +1080,7 @@ class Game {
     this.gameState.shootTimer -= delta;
     this.gameState.reloadTimer -= delta;
 
-   if (this.modelManager.gunActions.length > 0 &&
+    if (this.modelManager.gunActions.length > 0 &&
       this.gameState.shootTimer <= 0 &&
       !this.gameState.isReloading) {
       this.weaponManager.playGunAction(this.inputManager.isWalking() ? 2 : 0);
@@ -1130,7 +1137,10 @@ class Game {
     this.updateMovement(delta);
     this.updateWeapon(delta);
     this.updateAnimations(delta);
-    this.weatherManager.updateRain();
+
+    // Pass camera position to rain update for block-based rain movement
+    this.weatherManager.updateRain(this.sceneManager.camera.position);
+
     this.enemyManager.updateZombie(delta);
     this.lightingManager.updateFlashlight();
     this.uiManager.updateUI(this.modelManager);
@@ -1409,13 +1419,25 @@ class Game {
 // -- Audio and main code unchanged from your original (not shown for brevity) --
 
 let rainAudio: HTMLAudioElement;
+let bgAudio: HTMLAudioElement; // Add this line
+
 function setupRainAudio() {
   rainAudio = document.createElement('audio');
-  rainAudio.src = '/rain.mpeg';
+  rainAudio.src = '/rain.mp3';
   rainAudio.loop = true;
   rainAudio.volume = 0.2;
   rainAudio.style.display = 'none';
   document.body.appendChild(rainAudio);
+}
+
+// Add this function
+function setupBgAudio() {
+  bgAudio = document.createElement('audio');
+  bgAudio.src = '/bgsound.mp3';
+  bgAudio.loop = true;
+  bgAudio.volume = 0.8; // Adjust volume as needed
+  bgAudio.style.display = 'none';
+  document.body.appendChild(bgAudio);
 }
 
 let shotAudio: HTMLAudioElement;
@@ -1508,7 +1530,7 @@ function updateZombieSoundPosition(zombie: THREE.Object3D, camera: THREE.Perspec
 
 function main() {
   setupRainAudio();
-  setupShotAudio();
+  setupBgAudio(); // Add this line
   const startButton = document.getElementById("start-button") as HTMLElement;
   const startScreen = document.getElementById("start-screen") as HTMLElement;
   const loadingScreen = document.getElementById("loading-screen") as HTMLElement;
@@ -1532,6 +1554,7 @@ function main() {
           (window as any).game = game;
         }
         if (rainAudio) rainAudio.play();
+        if (bgAudio) bgAudio.play(); // Add this line
         await loadZombieAudioBuffer();
         game.startAfterLoading();
       });
@@ -1567,54 +1590,75 @@ function main() {
 }
 main();
 
+/**
+ * Smoothly fades an HTMLAudioElement's volume to a target value.
+ */
+function fadeAudio(audio: HTMLAudioElement, targetVolume: number, duration: number = 1000) {
+  if (!audio) return;
+  const startVolume = audio.volume;
+  const startTime = performance.now();
+  function step(now: number) {
+    const elapsed = now - startTime;
+    const t = Math.min(elapsed / duration, 1);
+    audio.volume = startVolume + (targetVolume - startVolume) * t;
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      audio.volume = targetVolume;
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+/**
+ * Fades all background audio (rain, bg, zombie) in/out.
+ * @param target 0 for mute, 1 for full volume
+ * @param duration ms
+ */
+function fadeAllBackgroundAudio(target: number, duration: number = 1000) {
+  if (rainAudio) fadeAudio(rainAudio, 0.2 * target, duration);
+  if (bgAudio) fadeAudio(bgAudio, 0.8 * target, duration);
+
+  // Fade zombie positional audio if playing (WebAudio API)
+  if (zombieAudioContext && zombieSource) {
+    // Use a gain node if not already present
+    if (!(zombieSource as any)._gainNode) {
+      const gainNode = zombieAudioContext.createGain();
+      gainNode.gain.value = target;
+      // Disconnect old chain and reconnect with gain
+      if (zombiePanner) {
+        zombiePanner.disconnect();
+        zombiePanner.connect(gainNode).connect(zombieAudioContext.destination);
+      }
+      (zombieSource as any)._gainNode = gainNode;
+    }
+    const gainNode = (zombieSource as any)._gainNode as GainNode;
+    gainNode.gain.cancelScheduledValues(zombieAudioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(target, zombieAudioContext.currentTime + duration / 1000);
+  }
+}
+
 function playSpeechAudio1() {
-  // Show the new mission text as subtitle and play the audio together
+  // Fade out background sounds
+  fadeAllBackgroundAudio(0, 800);
+
   showSubtitle(
     "Zeta to Echo Unit, we lost Sector 7 to the infected. Head straight through the breach, clear out hostiles, and reach the electric box. Once it's fixed, streetlights’ll light the whole damn sector. Move fast. We’re counting on you.",
     15000 // Adjust duration to match your audio length in ms
   );
   const audio = document.createElement('audio');
-  audio.src = '/speech_audio_1.mp3'; // Make sure this file exists and matches the text
+  audio.src = '/speech_audio_1.mp3';
   audio.volume = 1.0;
   audio.autoplay = true;
   audio.style.display = 'none';
   document.body.appendChild(audio);
   audio.addEventListener('ended', () => {
     audio.remove();
+    // Fade in background sounds
+    fadeAllBackgroundAudio(1, 1200);
   });
 }
 
-function showSubtitle(text: string, duration: number = 15000) {
-  let subtitle = document.getElementById('subtitle-box') as HTMLDivElement | null;
-  if (!subtitle) {
-    subtitle = document.createElement('div');
-    subtitle.id = 'subtitle-box';
-    subtitle.style.position = 'fixed';
-    subtitle.style.bottom = '7%';
-    subtitle.style.left = '50%';
-    subtitle.style.transform = 'translateX(-50%)';
-    subtitle.style.background = 'rgba(30,40,30,0.72)';
-    subtitle.style.color = '#3cff3c';
-    subtitle.style.padding = '18px 36px';
-    subtitle.style.borderRadius = '12px';
-    subtitle.style.fontSize = '1.25rem';
-    subtitle.style.fontFamily = 'monospace, monospace, sans-serif';
-    subtitle.style.fontWeight = 'bold';
-    subtitle.style.letterSpacing = '0.02em';
-    subtitle.style.boxShadow = '0 4px 24px #000a';
-    subtitle.style.zIndex = '1000';
-    subtitle.style.textAlign = 'center';
-    subtitle.style.pointerEvents = 'none';
-    document.body.appendChild(subtitle);
-  }
-  subtitle.textContent = text;
-  subtitle.style.display = 'block';
-  setTimeout(() => {
-    if (subtitle) subtitle.style.display = 'none';
-  }, duration);
-}
-
-// Update showMissionFailedOverlay to include a "Star Project on GitHub" button
 function showMissionFailedOverlay() {
   let overlay = document.getElementById("mission-failed-overlay");
   if (!overlay) {
@@ -1713,6 +1757,9 @@ function showMissionCompleteOverlay() {
 
 // Modify playSpeechAudio2 to accept a callback
 function playSpeechAudio2(onEnd?: () => void) {
+  // Fade out background sounds
+  fadeAllBackgroundAudio(0, 800);
+
   showSubtitle(
     "Sector clear. Good work, Echo. Stand by for further orders.",
     8000 // Adjust duration to match your audio length in ms
@@ -1727,6 +1774,40 @@ function playSpeechAudio2(onEnd?: () => void) {
     audio.remove();
     const subtitle = document.getElementById('subtitle-box');
     if (subtitle) subtitle.style.display = 'none';
+    // Fade in background sounds
+    fadeAllBackgroundAudio(1, 1200);
     if (onEnd) onEnd();
   });
+}
+function showSubtitle(text: string, duration: number) {
+  let subtitleBox = document.getElementById('subtitle-box') as HTMLDivElement | null;
+  if (!subtitleBox) {
+    subtitleBox = document.createElement('div');
+    subtitleBox.id = 'subtitle-box';
+    subtitleBox.style.position = 'fixed';
+    subtitleBox.style.bottom = '7%';
+    subtitleBox.style.left = '50%';
+    subtitleBox.style.transform = 'translateX(-50%)';
+    subtitleBox.style.background = 'rgba(30, 40, 30, 0.72)';
+    subtitleBox.style.color = 'rgb(60, 255, 60)';
+    subtitleBox.style.padding = '18px 36px';
+    subtitleBox.style.borderRadius = '12px';
+    subtitleBox.style.fontSize = '1.25rem';
+    subtitleBox.style.fontFamily = 'monospace, monospace, sans-serif';
+    subtitleBox.style.fontWeight = 'bold';
+    subtitleBox.style.letterSpacing = '0.02em';
+    subtitleBox.style.boxShadow = 'rgba(0, 0, 0, 0.667) 0px 4px 24px';
+    subtitleBox.style.zIndex = '1000';
+    subtitleBox.style.textAlign = 'center';
+    subtitleBox.style.pointerEvents = 'none';
+    subtitleBox.style.maxWidth = '80vw';
+    document.body.appendChild(subtitleBox);
+  }
+  subtitleBox.textContent = text;
+  subtitleBox.style.display = 'block';
+
+  // Remove/hide after duration
+  setTimeout(() => {
+    if (subtitleBox) subtitleBox.style.display = 'none';
+  }, duration);
 }

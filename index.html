@@ -18,11 +18,11 @@
     }
 
     #container {
-      width: 100vw;
-      height: 100vh;
       position: absolute;
       top: 0;
       left: 0;
+      width: 100vw;
+      height: 100vh;
       z-index: 0;
     }
 
@@ -32,24 +32,36 @@
       left: 0;
       width: 100vw;
       height: 100vh;
-      background:  url("/image.png"), linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(5, 5, 20, 0.95));
+      background: url("/image.png"), linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(5, 5, 20, 0.95));
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
       z-index: 10;
       color: #00f0ff;
       text-shadow: 0 0 10px #00f0ff, 0 0 20px #00f0ff;
       animation: fadeIn 1s ease-out;
+      padding: 2rem;
+      box-sizing: border-box;
+    }
+
+    #start-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+      max-width: 800px;
+      width: 100%;
+      overflow-y: auto;
+      max-height: 90vh;
     }
 
     #title {
       font-size: 3.5rem;
-      margin-bottom: 2rem;
       animation: glow 2s infinite alternate;
+      text-align: center;
     }
 
     #start-button {
@@ -128,20 +140,125 @@
       background: linear-gradient(90deg, #00f0ff, #00cce0);
       transition: width 0.3s;
     }
+
+    #github-star {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.75rem 2rem;
+      font-size: 1.2rem;
+      color: #fff;
+      background: linear-gradient(90deg, #24292f 60%, #00f0ff 100%);
+      border: none;
+      border-radius: 10px;
+      text-decoration: none;
+      box-shadow: 0 0 20px #00f0ff, 0 0 40px #00f0ff33;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.3s, transform 0.2s;
+    }
+
+    #github-star:hover {
+      background: linear-gradient(90deg, #00cce0 60%, #24292f 100%);
+      transform: scale(1.05);
+    }
+
+    #credits {
+      color: #b6faff;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      font-size: 1.1rem;
+      box-shadow: 0 0 10px #00f0ff44;
+      text-align: left;
+      width: 100%;
+      max-width: 700px;
+    }
+
+    #credits ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1rem 0;
+    }
+
+    #credits li {
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    #credits strong {
+      color: #00f0ff;
+    }
   </style>
 </head>
 
 <body>
   <div id="start-screen">
-    <div id="title">⚡ ZOMBIE STRIKE ⚡</div>
-    <button id="start-button">Start Game</button>
+    <div id="start-content">
+      <div id="title">⚡ ZOMBIE STRIKE ⚡</div>
+      <button id="start-button">Start Game</button>
+
+      <a id="github-star" href="https://github.com/rohanvashisht1234/threejs-zombieshooter-game" target="_blank">
+        <svg height="24" width="24" viewBox="0 0 16 16" fill="#fff" style="vertical-align:middle;margin-right:8px;">
+          <path d="M8 0C3.58 0 0 3.58...z" />
+        </svg>
+        Star this project on GitHub
+      </a>
+
+      <div id="credits">
+        <ul>
+          <li><strong>Rohan Vashisht</strong> — Programmer, map designer, game designer, voice actor, and the one who
+            brought everything to life.</li>
+          <li><strong>Alok Nair</strong> — Music & sound suggester, asset researcher, gameplay tester, and gave
+            invaluable feedback on various fixes.</li>
+        </ul>
+        <div style="margin-top:1.5rem;">
+          <strong>🔊 Credits</strong>
+          <ul>
+            <li>🎵 <strong>Music</strong><br>Karl Casey @ White Bat Audio – YouTube</li>
+            <li>🎧 <strong>Sound Effects</strong><br>Pixabay – pixabay.com</li>
+            <li>
+              <strong>3D Assets:</strong><br>
+              <ul>
+                <li><a href="https://sketchfab.com/3d-models/zombie-hazmat-49b3b4307f6a4d2386fdb02354158d04#download"
+                    target="_blank">Zombie Hazmat</a></li>
+                <li><a href="https://sketchfab.com/3d-models/fps-ak-74m-animations-94be8385c402474cacd39bc096c6ca14"
+                    target="_blank">FPS AK-74M + Animations</a></li>
+                <li><a href="https://sketchfab.com/3d-models/fence-0adbc93269c94b70b99d0627a3ee54f5"
+                    target="_blank">Fence</a></li>
+                <li><a href="https://sketchfab.com/3d-models/wall-door-19mb-cac51dfd82784736a726bba118e86de9"
+                    target="_blank">Wall + Door</a></li>
+                <li><a href="https://sketchfab.com/3d-models/sand-bags-e02685e0047948aabc75227cb1962d05#download"
+                    target="_blank">Sandbags</a></li>
+                <li><a
+                    href="https://sketchfab.com/3d-models/prototipo-speciale-police-95-low-poly-model-63aa215521334cef9c4d8c4c391252ad"
+                    target="_blank">Police Car (Low Poly)</a></li>
+                <li><a
+                    href="https://sketchfab.com/3d-models/crashed-abandoned-car-game-ready-66ef51a84c9843dda53bf0b4b9020011#download"
+                    target="_blank">Crashed Abandoned Car</a></li>
+                <li><a href="https://sketchfab.com/3d-models/electric-box-c7bba1e774d94e67b410e4c9fdfdee34#download"
+                    target="_blank">Electric Box</a></li>
+                <li><a
+                    href="https://sketchfab.com/3d-models/wwii-air-trafic-control-tower-9e7f035ed7f4449593ad1bebe6ac71b1"
+                    target="_blank">WWII Air Traffic Control Tower</a></li>
+                <li><a
+                    href="https://sketchfab.com/3d-models/psx-style-brick-wall-80e53aac4eaa4aa99750f2429a4fe9f2#download"
+                    target="_blank">PSX Style Brick Wall</a></li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
   </div>
+
   <div id="loading-screen">
     <div id="loading-text">LOADING</div>
     <div id="loading-bar-bg">
       <div id="loading-bar"></div>
     </div>
   </div>
+
   <div id="container"></div>
   <script type="module" src="/main.ts"></script>
 </body>
