@@ -23,7 +23,7 @@ This isn't just survival—this is a **last stand**.
 
 ## 🚀 Play the Game
 
-> [💥 Play Now (coming soon or link here)]()
+> [💥 Click to play now](https://www.zombiestrike.monster/)
 
 ---
 
