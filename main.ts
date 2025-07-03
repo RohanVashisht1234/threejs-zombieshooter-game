@@ -1579,29 +1579,47 @@ function main() {
   });
 
   function showClickToPlay(onClick: () => void) {
-    const overlay = document.createElement('div');
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100vw';
-    overlay.style.height = '100vh';
-    overlay.style.background = 'rgba(0,0,0,0.7)';
-    overlay.style.display = 'flex';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
-    overlay.style.zIndex = '200';
-    overlay.style.color = '#fff';
-    overlay.style.fontSize = '2.5rem';
-    overlay.style.cursor = 'pointer';
-    overlay.innerText = 'Click to Play';
+  const overlay = document.createElement('div');
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100vw';
+  overlay.style.height = '100vh';
+  overlay.style.background = 'rgba(0,0,0,0.7)';
+  overlay.style.display = 'flex';
+  overlay.style.flexDirection = 'column';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '200';
+  overlay.style.color = '#fff';
+  overlay.style.cursor = 'pointer';
 
-    overlay.addEventListener('click', () => {
-      overlay.remove();
-      onClick();
-    });
+  const title = document.createElement('div');
+  title.innerText = 'Click to Play';
+  title.style.fontSize = '2rem';
 
-    document.body.appendChild(overlay);
-  }
+  const instructions = document.createElement('div');
+  instructions.style.fontSize = '1.2rem';
+  instructions.style.marginTop = '1.5rem';
+  instructions.style.textAlign = 'center';
+  instructions.innerHTML = `
+    Use <b>W A S D</b> to move<br/><br/>
+    Press <b>R</b> to reload<br/><br/>
+    Press <b>F</b> to toggle flashlight
+  `;
+
+  overlay.appendChild(title);
+  overlay.appendChild(instructions);
+
+  overlay.addEventListener('click', () => {
+    overlay.remove();
+    onClick();
+  });
+
+  document.body.appendChild(overlay);
+}
+
+
 }
 main();
 
