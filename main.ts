@@ -68,7 +68,7 @@ class GameState {
   public reloadTimer: number = 0;
   public isReloading: boolean = false;
   public isShooting: boolean = false;
-  public flashlightOn: boolean = false;
+  public flashlightOn: boolean = true; // enabled by default
   public currentGunAction: number = -1;
   public keysPressed: Record<string, boolean> = {};
 }
@@ -119,6 +119,8 @@ class LightingManager {
     this.scene = scene;
     this.camera = camera;
     this.setupLights();
+    // Enable flashlight by default
+    this.flashlight.visible = true;
   }
 
   private setupLights(): void {
@@ -133,7 +135,7 @@ class LightingManager {
     this.flashlight.shadow.normalBias = 1;
     this.flashlight.castShadow = true;
     this.flashlight.position.set(0, 0, 0);
-    this.flashlight.visible = false;
+    this.flashlight.visible = false; // will be set to true in constructor
     this.camera.add(this.flashlight);
 
     this.muzzleFlash = new THREE.PointLight(0xffaa33, 7, 100);
@@ -221,12 +223,21 @@ class ModelManager {
 
         let x, z;
         let attempts = 0;
+        // Require zombies to spawn at least 18 units away from the player (adjust as needed)
+        const minSpawnDistance = 180;
+        let distToPlayer = 0;
+        let tooCloseToOther = false;
         do {
           x = THREE.MathUtils.randFloat(GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
           z = THREE.MathUtils.randFloat(GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
+          distToPlayer = Math.sqrt(
+            Math.pow(x - CONFIG.CAMERA.INITIAL_POSITION.x, 2) +
+            Math.pow(z - CONFIG.CAMERA.INITIAL_POSITION.z, 2)
+          );
+          // Also avoid overlapping with other zombies
+          tooCloseToOther = this.zombies.some(zb => zb.position.distanceTo(new THREE.Vector3(x, 0.05, z)) < 2);
         } while (
-          (Math.abs(x) < 5 && Math.abs(z - CONFIG.CAMERA.INITIAL_POSITION.z) < 10) ||
-          this.zombies.some(zb => zb.position.distanceTo(new THREE.Vector3(x, 0.05, z)) < 2) && ++attempts < 10
+          (distToPlayer < minSpawnDistance || tooCloseToOther) && ++attempts < 20
         );
 
         model.position.set(x, 0.05, z);
@@ -542,6 +553,39 @@ class EnemyManager {
     if (!this.modelManager.zombies.length) return;
     const avoidRadius = 1.0;
 
+    let firstAliveZombieIdx = -1;
+    for (let i = 0; i < this.modelManager.zombies.length; i++) {
+      const state = this.modelManager.zombieStates[i];
+      if (!state.dead && !state.dying) {
+        firstAliveZombieIdx = i;
+        break;
+      }
+    }
+
+    // Play or stop zombie sound based on first alive zombie
+    if (firstAliveZombieIdx !== -1) {
+      const zombie = this.modelManager.zombies[firstAliveZombieIdx];
+      if (!this.zombieSoundStarted && typeof zombieAudioBuffer !== "undefined" && zombieAudioBuffer) {
+        playZombieSoundAt(zombie.position, this.camera);
+        this.zombieSoundStarted = true;
+      }
+      if (this.zombieSoundStarted) {
+        updateZombieSoundPosition(zombie, this.camera);
+      }
+    } else if (this.zombieSoundStarted) {
+      // Stop sound if no alive zombies
+      if (zombieSource) {
+        zombieSource.stop();
+        zombieSource.disconnect();
+        zombieSource = null;
+      }
+      if (zombiePanner) {
+        zombiePanner.disconnect();
+        zombiePanner = null;
+      }
+      this.zombieSoundStarted = false;
+    }
+
     for (let i = 0; i < this.modelManager.zombies.length; i++) {
       const zombie = this.modelManager.zombies[i];
       const state = this.modelManager.zombieStates[i];
@@ -629,9 +673,13 @@ class UIManager {
   private gameState: GameState;
   private ammoDisplay: HTMLElement;
   private healthFill: HTMLElement;
+  private zombieProgressBar: HTMLElement;
+  private zombieProgressFill: HTMLElement;
+  private totalZombies: number;
 
   constructor(gameState: GameState) {
     this.gameState = gameState;
+    this.totalZombies = CONFIG.ZOMBIE.COUNT;
     this.setupUI();
   }
 
@@ -644,11 +692,17 @@ class UIManager {
           <div id="healthFill" style="background:#f00;width:100%;height:100%"></div>
         </div>
       </div>
+      <div id="zombieProgressBar" style="position:fixed;top:20px;left:50%;transform:translateX(-50%);width:320px;height:22px;background:#222;border:2px solid #fff;border-radius:12px;z-index:30;box-shadow:0 2px 12px #000a;overflow:hidden;display:flex;align-items:center;">
+        <div id="zombieProgressFill" style="background:#3cff3c;height:100%;width:0%;transition:width 0.2s;"></div>
+        <span id="zombieProgressText" style="position:absolute;width:100%;text-align:center;color:#fff;font-weight:bold;letter-spacing:0.04em;font-size:15px;pointer-events:none;">0 / ${this.totalZombies} Zombies Killed</span>
+      </div>
     `;
     document.body.appendChild(ui);
 
     this.ammoDisplay = document.getElementById('ammoDisplay')!;
     this.healthFill = document.getElementById('healthFill')! as HTMLDivElement;
+    this.zombieProgressBar = document.getElementById('zombieProgressBar')!;
+    this.zombieProgressFill = document.getElementById('zombieProgressFill')!;
 
     this.setupAimDot();
   }
@@ -670,9 +724,25 @@ class UIManager {
     document.body.appendChild(aimDot);
   }
 
-  public updateUI(): void {
+  public updateUI(modelManager?: ModelManager): void {
     this.ammoDisplay.textContent = `Ammo: ${this.gameState.ammo} / ${this.gameState.maxAmmo}`;
     this.healthFill.style.width = `${this.gameState.health}%`;
+
+    // Update zombie progress bar if modelManager is provided
+    if (modelManager) {
+      const killed = modelManager.zombieStates.filter(z => z.dead).length;
+      const percent = Math.round((killed / this.totalZombies) * 100);
+      this.zombieProgressFill.style.width = `${percent}%`;
+      const text = document.getElementById('zombieProgressText');
+      if (text) text.textContent = `${killed} / ${this.totalZombies} Zombies Killed`;
+
+      // Hide progress bar if all zombies are dead
+      if (killed >= this.totalZombies) {
+        this.zombieProgressBar.style.display = 'none';
+      } else {
+        this.zombieProgressBar.style.display = 'flex';
+      }
+    }
   }
 }
 
@@ -803,6 +873,12 @@ class Game {
   private checkpointMixer: THREE.AnimationMixer | null = null;
   private checkpointTriggered = false;
 
+  // Add for second checkpoint
+  private secondCheckpoint: THREE.Object3D | null = null;
+  private secondCheckpointBox: THREE.Box3 | null = null;
+  private secondCheckpointMixer: THREE.AnimationMixer | null = null;
+  private secondCheckpointTriggered = false;
+
   constructor(loadingManager: GameLoadingManager) {
     this.loadingManager = loadingManager;
     this.initialize();
@@ -827,7 +903,7 @@ class Game {
     this.clock = new THREE.Clock();
     this.setupWindowEvents();
 
-    // Load checkpoint.glb at (0, 0, 0) and play animation if present
+    // Load first checkpoint at (0, 0.7, 0)
     const loader = new GLTFLoader(this.loadingManager.manager);
     loader.load('/checkpoint.glb', (gltf) => {
       this.checkpoint = gltf.scene;
@@ -936,6 +1012,7 @@ class Game {
 
     // Update checkpoint animation
     if (this.checkpointMixer) this.checkpointMixer.update(delta);
+    if (this.secondCheckpointMixer) this.secondCheckpointMixer.update(delta);
 
     this.updateMovement(delta);
     this.updateWeapon(delta);
@@ -943,8 +1020,11 @@ class Game {
     this.weatherManager.updateRain();
     this.enemyManager.updateZombie(delta);
     this.lightingManager.updateFlashlight();
-    this.uiManager.updateUI();
+    this.uiManager.updateUI(this.modelManager);
+
     this.checkCheckpoint();
+    this.checkSecondCheckpoint(); // <-- Add this line
+
     this.composer.render();
   }
 
@@ -975,6 +1055,65 @@ class Game {
       this.checkpointMixer = null;
     }
   }
+
+  // --- Add this method for the second checkpoint ---
+  private checkSecondCheckpoint(): void {
+    // Only spawn after all zombies are dead and not already spawned
+    if (!this.secondCheckpoint && this.modelManager && this.modelManager.zombieStates) {
+      const killed = this.modelManager.zombieStates.filter(z => z.dead).length;
+      if (killed >= this.modelManager.zombieStates.length) {
+        // Spawn second checkpoint at (0, 0.7, 400)
+        const loader = new GLTFLoader(this.loadingManager.manager);
+        loader.load('/checkpoint.glb', (gltf) => {
+          this.secondCheckpoint = gltf.scene;
+          this.secondCheckpoint.position.set(0, 0.7, 400);
+          this.secondCheckpoint.scale.set(10, 10, 10);
+          this.secondCheckpoint.traverse((child: any) => {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          });
+          this.sceneManager.scene.add(this.secondCheckpoint);
+
+          // Animation
+          if (gltf.animations && gltf.animations.length > 0) {
+            this.secondCheckpointMixer = new THREE.AnimationMixer(this.secondCheckpoint);
+            gltf.animations.forEach((clip) => {
+              this.secondCheckpointMixer!.clipAction(clip).play();
+            });
+          }
+
+          // Compute bounding box for collision
+          this.secondCheckpointBox = new THREE.Box3().setFromObject(this.secondCheckpoint);
+        });
+      }
+    }
+
+    // If spawned, check collision
+    if (
+      this.secondCheckpoint &&
+      this.secondCheckpointBox &&
+      !this.secondCheckpointTriggered
+    ) {
+      this.secondCheckpointBox.setFromObject(this.secondCheckpoint);
+      const playerPos = this.sceneManager.camera.position;
+      const min = this.secondCheckpointBox.min;
+      const max = this.secondCheckpointBox.max;
+      if (
+        playerPos.x >= min.x && playerPos.x <= max.x &&
+        playerPos.z >= min.z && playerPos.z <= max.z
+      ) {
+        this.secondCheckpointTriggered = true;
+        // You can play a sound or show a message here if desired
+        if (this.secondCheckpoint && this.sceneManager.scene) {
+          this.sceneManager.scene.remove(this.secondCheckpoint);
+        }
+        this.secondCheckpoint = null;
+        this.secondCheckpointBox = null;
+        this.secondCheckpointMixer = null;
+        // Example: showSubtitle("Mission Complete!", 6000);
+      }
+    }
+  }
 }
 
 // -- Audio and main code unchanged from your original (not shown for brevity) --
@@ -984,7 +1123,7 @@ function setupRainAudio() {
   rainAudio = document.createElement('audio');
   rainAudio.src = '/rain.mpeg';
   rainAudio.loop = true;
-  rainAudio.volume = 0.5;
+  rainAudio.volume = 0.2;
   rainAudio.style.display = 'none';
   document.body.appendChild(rainAudio);
 }
@@ -1139,13 +1278,51 @@ function main() {
 main();
 
 function playSpeechAudio1() {
+  // Show the new mission text as subtitle and play the audio together
+  showSubtitle(
+    "Zeta to Echo Unit, we lost Sector 7 to the infected. Head straight through the breach, clear out hostiles, and reach the electric box. Once it's fixed, streetlights’ll light the whole damn sector. Move fast. We’re counting on you.",
+    15000 // Adjust duration to match your audio length in ms
+  );
   const audio = document.createElement('audio');
-  audio.src = '/speech_audio_1.mp3';
+  audio.src = '/speech_audio_1.mp3'; // Make sure this file exists and matches the text
   audio.volume = 1.0;
   audio.autoplay = true;
   audio.style.display = 'none';
   document.body.appendChild(audio);
   audio.addEventListener('ended', () => {
     audio.remove();
+    // Optionally hide subtitle exactly when audio ends:
+    const subtitle = document.getElementById('subtitle-box');
+    if (subtitle) subtitle.style.display = 'none';
   });
+}
+
+function showSubtitle(text: string, duration: number = 15000) {
+  let subtitle = document.getElementById('subtitle-box') as HTMLDivElement | null;
+  if (!subtitle) {
+    subtitle = document.createElement('div');
+    subtitle.id = 'subtitle-box';
+    subtitle.style.position = 'fixed';
+    subtitle.style.bottom = '7%';
+    subtitle.style.left = '50%';
+    subtitle.style.transform = 'translateX(-50%)';
+    subtitle.style.background = 'rgba(30,40,30,0.72)';
+    subtitle.style.color = '#3cff3c';
+    subtitle.style.padding = '18px 36px';
+    subtitle.style.borderRadius = '12px';
+    subtitle.style.fontSize = '1.25rem';
+    subtitle.style.fontFamily = 'monospace, monospace, sans-serif';
+    subtitle.style.fontWeight = 'bold';
+    subtitle.style.letterSpacing = '0.02em';
+    subtitle.style.boxShadow = '0 4px 24px #000a';
+    subtitle.style.zIndex = '1000';
+    subtitle.style.textAlign = 'center';
+    subtitle.style.pointerEvents = 'none';
+    document.body.appendChild(subtitle);
+  }
+  subtitle.textContent = text;
+  subtitle.style.display = 'block';
+  setTimeout(() => {
+    if (subtitle) subtitle.style.display = 'none';
+  }, duration);
 }
