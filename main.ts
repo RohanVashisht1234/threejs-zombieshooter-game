@@ -30,10 +30,10 @@ const CONFIG = {
     SPEED: 5, // increased for more visible movement
     DAMAGE_RATE: 10,
     MIN_DISTANCE: 0.5,
-    COUNT: 80
+    COUNT: 50
   },
   RAIN: {
-    COUNT: 1000,
+    COUNT: 500,
     FALL_SPEED_MIN: 0.3,
     FALL_SPEED_MAX: 0.8,
     SPAWN_RANGE: 25,
@@ -42,7 +42,7 @@ const CONFIG = {
   },
   BULLET: {
     SPEED: 10,
-    MAX_DISTANCE: 2000
+    MAX_DISTANCE: 1000
   },
   PLAYER: {
     INITIAL_HEALTH: 100
@@ -94,16 +94,16 @@ class SceneManager {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
-      precision: 'mediump'
+      precision: 'lowp'
     });
     this.setupRenderer();
   }
 
   private setupRenderer(): void {
     this.renderer.shadowMap.enabled = true;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, CONFIG.RENDERER.PIXEL_RATIO_MAX));
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, CONFIG.RENDERER.PIXEL_RATIO_MAX));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     document.getElementById('container')?.appendChild(this.renderer.domElement);
   }
@@ -124,8 +124,8 @@ class LightingManager {
   }
 
   private setupLights(): void {
-    const ambientLight = new THREE.AmbientLight(0x222244, 0.8);
-    this.scene.add(ambientLight);
+    // const ambientLight = new THREE.AmbientLight(0x222244, 0.8);
+    // this.scene.add(ambientLight);
     const moonLight = new THREE.DirectionalLight(0x8888ff, 0.5);
     moonLight.position.set(20, 100, 50);
     moonLight.castShadow = true;
@@ -1428,6 +1428,10 @@ function setupRainAudio() {
   rainAudio.volume = 0.2;
   rainAudio.style.display = 'none';
   document.body.appendChild(rainAudio);
+  rainAudio.addEventListener('ended', () => {
+    rainAudio.currentTime = 0;
+    rainAudio.play().catch(() => {});
+  });
 }
 
 // Add this function
@@ -1435,9 +1439,13 @@ function setupBgAudio() {
   bgAudio = document.createElement('audio');
   bgAudio.src = '/bgsound.mp3';
   bgAudio.loop = true;
-  bgAudio.volume = 0.8; // Adjust volume as needed
+  bgAudio.volume = 0.8;
   bgAudio.style.display = 'none';
   document.body.appendChild(bgAudio);
+  bgAudio.addEventListener('ended', () => {
+    bgAudio.currentTime = 0;
+    bgAudio.play().catch(() => {});
+  });
 }
 
 let shotAudio: HTMLAudioElement;
@@ -1530,7 +1538,7 @@ function updateZombieSoundPosition(zombie: THREE.Object3D, camera: THREE.Perspec
 
 function main() {
   setupRainAudio();
-  setupBgAudio(); // Add this line
+  setupBgAudio();
   const startButton = document.getElementById("start-button") as HTMLElement;
   const startScreen = document.getElementById("start-screen") as HTMLElement;
   const loadingScreen = document.getElementById("loading-screen") as HTMLElement;
@@ -1553,8 +1561,15 @@ function main() {
           game = new Game(loadingManager);
           (window as any).game = game;
         }
-        if (rainAudio) rainAudio.play();
-        if (bgAudio) bgAudio.play(); // Add this line
+        // Always play rain and bg music, even if previously stopped
+        if (rainAudio) {
+          rainAudio.loop = true;
+          rainAudio.play().catch(() => {});
+        }
+        if (bgAudio) {
+          bgAudio.loop = true;
+          bgAudio.play().catch(() => {});
+        }
         await loadZombieAudioBuffer();
         game.startAfterLoading();
       });
@@ -1595,6 +1610,11 @@ main();
  */
 function fadeAudio(audio: HTMLAudioElement, targetVolume: number, duration: number = 1000) {
   if (!audio) return;
+  // Ensure audio is always playing and looping
+  if (audio.paused) {
+    audio.loop = true;
+    audio.play().catch(() => {}); // Ignore play errors (autoplay policy)
+  }
   const startVolume = audio.volume;
   const startTime = performance.now();
   function step(now: number) {
@@ -1616,16 +1636,23 @@ function fadeAudio(audio: HTMLAudioElement, targetVolume: number, duration: numb
  * @param duration ms
  */
 function fadeAllBackgroundAudio(target: number, duration: number = 1000) {
-  if (rainAudio) fadeAudio(rainAudio, 0.2 * target, duration);
-  if (bgAudio) fadeAudio(bgAudio, 0.8 * target, duration);
+  // Always ensure rain and bg audio are playing and looping
+  if (rainAudio && rainAudio.paused) {
+    rainAudio.loop = true;
+    rainAudio.play().catch(() => {});
+  }
+  if (bgAudio && bgAudio.paused) {
+    bgAudio.loop = true;
+    bgAudio.play().catch(() => {});
+  }
+  fadeAudio(rainAudio, 0.2 * target, duration);
+  fadeAudio(bgAudio, 0.8 * target, duration);
 
   // Fade zombie positional audio if playing (WebAudio API)
   if (zombieAudioContext && zombieSource) {
-    // Use a gain node if not already present
     if (!(zombieSource as any)._gainNode) {
       const gainNode = zombieAudioContext.createGain();
       gainNode.gain.value = target;
-      // Disconnect old chain and reconnect with gain
       if (zombiePanner) {
         zombiePanner.disconnect();
         zombiePanner.connect(gainNode).connect(zombieAudioContext.destination);
@@ -1639,12 +1666,12 @@ function fadeAllBackgroundAudio(target: number, duration: number = 1000) {
 }
 
 function playSpeechAudio1() {
-  // Fade out background sounds
-  fadeAllBackgroundAudio(0, 800);
+  // Lower background volumes but keep playing
+  fadeAllBackgroundAudio(0.3, 800);
 
   showSubtitle(
     "Zeta to Echo Unit, we lost Sector 7 to the infected. Head straight through the breach, clear out hostiles, and reach the electric box. Once it's fixed, streetlights’ll light the whole damn sector. Move fast. We’re counting on you.",
-    15000 // Adjust duration to match your audio length in ms
+    15000
   );
   const audio = document.createElement('audio');
   audio.src = '/speech_audio_1.mp3';
@@ -1654,7 +1681,7 @@ function playSpeechAudio1() {
   document.body.appendChild(audio);
   audio.addEventListener('ended', () => {
     audio.remove();
-    // Fade in background sounds
+    // Restore background volumes
     fadeAllBackgroundAudio(1, 1200);
   });
 }
@@ -1757,12 +1784,12 @@ function showMissionCompleteOverlay() {
 
 // Modify playSpeechAudio2 to accept a callback
 function playSpeechAudio2(onEnd?: () => void) {
-  // Fade out background sounds
-  fadeAllBackgroundAudio(0, 800);
+  // Lower background volumes but keep playing
+  fadeAllBackgroundAudio(0.3, 800);
 
   showSubtitle(
     "Sector clear. Good work, Echo. Stand by for further orders.",
-    8000 // Adjust duration to match your audio length in ms
+    8000
   );
   const audio = document.createElement('audio');
   audio.src = '/speech_audio_2.mp3';
@@ -1774,7 +1801,7 @@ function playSpeechAudio2(onEnd?: () => void) {
     audio.remove();
     const subtitle = document.getElementById('subtitle-box');
     if (subtitle) subtitle.style.display = 'none';
-    // Fade in background sounds
+    // Restore background volumes
     fadeAllBackgroundAudio(1, 1200);
     if (onEnd) onEnd();
   });
