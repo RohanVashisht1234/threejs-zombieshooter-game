@@ -12,7 +12,7 @@ const CONFIG = {
     FOV: 55,
     NEAR: 0.1,
     FAR: 1000,
-    INITIAL_POSITION: { x: 0, y: 2, z: 30 }
+    INITIAL_POSITION: { x: 0, y: 2, z: 10 }
   },
   RENDERER: {
     PIXEL_RATIO_MAX: 1.5
@@ -185,6 +185,7 @@ class ModelManager {
   public gunMixer?: THREE.AnimationMixer;
   public gunActions: THREE.AnimationAction[] = [];
   public zombieStates: ZombieState[] = [];
+  private _zombieGLTF: any = null; // cache for reuse
   constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, loadingManager: THREE.LoadingManager) {
     this.scene = scene;
     this.camera = camera;
@@ -210,6 +211,16 @@ class ModelManager {
           (o as THREE.PointLight).shadow.bias = -0.0009;
         }
       });
+
+      // --- Turn off all lights in map.glb initially ---
+      gltf.scene.traverse((obj: any) => {
+        if (obj.isLight) {
+          obj.visible = false;
+          if (obj.intensity !== undefined) obj.intensity = 0;
+        }
+      });
+      // -------------------------------------------------
+
       gltf.scene.position.y = -0.2;
       this.scene.add(gltf.scene);
     });
@@ -217,13 +228,13 @@ class ModelManager {
 
   private loadZombie(): void {
     this.loader.load('/zombie_hazmat.glb', (gltf) => {
+      this._zombieGLTF = gltf; // cache for respawn
       for (let i = 0; i < CONFIG.ZOMBIE.COUNT; i++) {
         const model = SkeletonUtils.clone(gltf.scene);
         model.scale.set(1.5, 1.5, 1.5);
 
         let x, z;
         let attempts = 0;
-        // Require zombies to spawn at least 18 units away from the player (adjust as needed)
         const minSpawnDistance = 180;
         let distToPlayer = 0;
         let tooCloseToOther = false;
@@ -234,7 +245,6 @@ class ModelManager {
             Math.pow(x - CONFIG.CAMERA.INITIAL_POSITION.x, 2) +
             Math.pow(z - CONFIG.CAMERA.INITIAL_POSITION.z, 2)
           );
-          // Also avoid overlapping with other zombies
           tooCloseToOther = this.zombies.some(zb => zb.position.distanceTo(new THREE.Vector3(x, 0.05, z)) < 2);
         } while (
           (distToPlayer < minSpawnDistance || tooCloseToOther) && ++attempts < 20
@@ -275,6 +285,70 @@ class ModelManager {
       this.gunActions = gltf.animations.map((a) => this.gunMixer!.clipAction(a));
       this.camera.add(this.fpsGun);
     });
+  }
+
+  // Respawn zombies (same amount as original), reusing the already loaded zombie GLTF
+  private respawnZombies() {
+    // Remove old zombies from scene
+    for (const zombie of this.zombies) {
+      this.scene.remove(zombie);
+    }
+    this.zombies = [];
+    this.zombieMixers = [];
+    this.zombieStates = [];
+
+    // Use the previously loaded zombie GLTF for respawn
+    // We'll store the loaded zombie GLTF in ModelManager for reuse
+    if ((this as any)._zombieGLTF) {
+      this.spawnZombiesFromGLTF((this as any)._zombieGLTF, CONFIG.ZOMBIE.COUNT);
+    } else {
+      // If not loaded yet, fallback to original spawnZombies
+      (this as any).spawnZombies(CONFIG.ZOMBIE.COUNT);
+    }
+  }
+
+  // Helper to spawn zombies from a cached GLTF
+  private spawnZombiesFromGLTF(gltf: any, count: number) {
+    for (let i = 0; i < count; i++) {
+      const model = SkeletonUtils.clone(gltf.scene);
+      model.scale.set(1.5, 1.5, 1.5);
+
+      let x, z;
+      let attempts = 0;
+      const minSpawnDistance = 180;
+      let distToPlayer = 0;
+      let tooCloseToOther = false;
+      do {
+        x = THREE.MathUtils.randFloat(GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
+        z = THREE.MathUtils.randFloat(GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
+        distToPlayer = Math.sqrt(
+          Math.pow(x - CONFIG.CAMERA.INITIAL_POSITION.x, 2) +
+          Math.pow(z - CONFIG.CAMERA.INITIAL_POSITION.z, 2)
+        );
+        tooCloseToOther = this.zombies.some(zb => zb.position.distanceTo(new THREE.Vector3(x, 0.05, z)) < 2);
+      } while (
+        (distToPlayer < minSpawnDistance || tooCloseToOther) && ++attempts < 20
+      );
+
+      model.position.set(x, 0.05, z);
+
+      model.traverse((child: any) => {
+        child.castShadow = child.receiveShadow = true;
+      });
+
+      const mixer = new THREE.AnimationMixer(model);
+      const walkAnim = gltf.animations.find((a: any) => a.name.toLowerCase().includes('walk')) || gltf.animations[0];
+      const action = mixer.clipAction(walkAnim);
+      action.play();
+      action.timeScale = 2;
+      action.time = Math.random() * action.getClip().duration;
+
+      this.zombieMixers.push(mixer);
+      this.zombies.push(model);
+      // Each zombie starts with 3 health (3 shots to kill)
+      this.zombieStates.push({ health: 3, dead: false, dying: false, deathTimer: 0 });
+      this.scene.add(model);
+    }
   }
 }
 
@@ -744,6 +818,12 @@ class UIManager {
       }
     }
   }
+
+  public showZombieBar() {
+    if (this.zombieProgressBar) {
+      this.zombieProgressBar.style.display = 'flex';
+    }
+  }
 }
 
 class InputManager {
@@ -873,11 +953,14 @@ class Game {
   private checkpointMixer: THREE.AnimationMixer | null = null;
   private checkpointTriggered = false;
 
-  // Add for second checkpoint
-  private secondCheckpoint: THREE.Object3D | null = null;
-  private secondCheckpointBox: THREE.Box3 | null = null;
-  private secondCheckpointMixer: THREE.AnimationMixer | null = null;
-  private secondCheckpointTriggered = false;
+  private checkpoint2Active = false;
+  private checkpoint2Triggered = false;
+
+  private checkpoint3Active = false;
+  private checkpoint3Triggered = false;
+
+  // Store original zombie count for respawn
+  private originalZombieCount = CONFIG.ZOMBIE.COUNT;
 
   constructor(loadingManager: GameLoadingManager) {
     this.loadingManager = loadingManager;
@@ -990,7 +1073,7 @@ class Game {
     this.gameState.shootTimer -= delta;
     this.gameState.reloadTimer -= delta;
 
-    if (this.modelManager.gunActions.length > 0 &&
+   if (this.modelManager.gunActions.length > 0 &&
       this.gameState.shootTimer <= 0 &&
       !this.gameState.isReloading) {
       this.weaponManager.playGunAction(this.inputManager.isWalking() ? 2 : 0);
@@ -1006,13 +1089,43 @@ class Game {
     }
   }
 
+  // Call this in animate() to update lights in real time
+  private updateNearbyStreetLights() {
+    if (!this.sceneManager.scene) return;
+
+    // Find all PointLights in the scene that are currently off (except muzzleFlash)
+    const playerPos = this.sceneManager.camera.position;
+    const pointLights: any[] = [];
+    this.sceneManager.scene.traverse((obj: any) => {
+      if (
+        obj.isPointLight &&
+        obj !== this.lightingManager.muzzleFlash // never control muzzle flash
+      ) {
+        // Store distance for sorting
+        obj._distanceToPlayer = obj.position.distanceTo(playerPos);
+        pointLights.push(obj);
+      }
+    });
+
+    // Sort by distance and enable the 4 closest street lights, disable the rest
+    pointLights.sort((a, b) => a._distanceToPlayer - b._distanceToPlayer);
+    for (let i = 0; i < pointLights.length; i++) {
+      if (i < 4) {
+        pointLights[i].visible = true;
+        if (pointLights[i].intensity !== undefined) pointLights[i].intensity = 100;
+      } else {
+        pointLights[i].visible = false;
+        if (pointLights[i].intensity !== undefined) pointLights[i].intensity = 0;
+      }
+    }
+  }
+
   private animate(): void {
     requestAnimationFrame(() => this.animate());
     const delta = this.clock.getDelta();
 
     // Update checkpoint animation
     if (this.checkpointMixer) this.checkpointMixer.update(delta);
-    if (this.secondCheckpointMixer) this.secondCheckpointMixer.update(delta);
 
     this.updateMovement(delta);
     this.updateWeapon(delta);
@@ -1022,8 +1135,20 @@ class Game {
     this.lightingManager.updateFlashlight();
     this.uiManager.updateUI(this.modelManager);
 
+    // Mission failed check
+    if (this.gameState.health <= 0) {
+      showMissionFailedOverlay();
+      return; // Stop further updates if mission failed
+    }
+
     this.checkCheckpoint();
-    this.checkSecondCheckpoint(); // <-- Add this line
+    this.checkSecondCheckpoint();
+    this.checkThirdCheckpoint();
+
+    // Real-time update of street lights after second checkpoint
+    if (this.checkpoint2Triggered) {
+      this.updateNearbyStreetLights();
+    }
 
     this.composer.render();
   }
@@ -1046,73 +1171,238 @@ class Game {
     ) {
       this.checkpointTriggered = true;
       playSpeechAudio1();
-      // Remove from scene for reliability
-      if (this.checkpoint && this.sceneManager.scene) {
-        this.sceneManager.scene.remove(this.checkpoint);
+      // Instead of removing, just hide and prep for checkpoint 2
+      if (this.checkpoint) {
+        this.checkpoint.visible = false;
       }
-      this.checkpoint = null;
+      // Do not remove from scene, keep reference for reuse
       this.checkpointBox = null;
       this.checkpointMixer = null;
     }
   }
 
-  // --- Add this method for the second checkpoint ---
   private checkSecondCheckpoint(): void {
     // Only spawn after all zombies are dead and not already spawned
-    if (!this.secondCheckpoint && this.modelManager && this.modelManager.zombieStates) {
+    if (!this.checkpoint2Active && this.modelManager && this.modelManager.zombieStates) {
       const killed = this.modelManager.zombieStates.filter(z => z.dead).length;
       if (killed >= this.modelManager.zombieStates.length) {
-        // Spawn second checkpoint at (0, 0.7, 400)
-        const loader = new GLTFLoader(this.loadingManager.manager);
-        loader.load('/checkpoint.glb', (gltf) => {
-          this.secondCheckpoint = gltf.scene;
-          this.secondCheckpoint.position.set(0, 0.7, 400);
-          this.secondCheckpoint.scale.set(10, 10, 10);
-          this.secondCheckpoint.traverse((child: any) => {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          });
-          this.sceneManager.scene.add(this.secondCheckpoint);
+        // Hide start and loading screens immediately
+        const startScreen = document.getElementById("start-screen");
+        const loadingScreen = document.getElementById("loading-screen");
+        if (startScreen) startScreen.style.display = "none";
+        if (loadingScreen) loadingScreen.style.display = "none";
 
-          // Animation
-          if (gltf.animations && gltf.animations.length > 0) {
-            this.secondCheckpointMixer = new THREE.AnimationMixer(this.secondCheckpoint);
-            gltf.animations.forEach((clip) => {
-              this.secondCheckpointMixer!.clipAction(clip).play();
-            });
-          }
-
-          // Compute bounding box for collision
-          this.secondCheckpointBox = new THREE.Box3().setFromObject(this.secondCheckpoint);
-        });
+        // Move and show the checkpoint as checkpoint 2
+        if (this.checkpoint) {
+          this.checkpoint.position.set(0, 0.7, -400);
+          this.checkpoint.scale.set(10, 10, 10);
+          this.checkpoint.visible = true;
+          // Recreate bounding box for new position
+          this.checkpointBox = new THREE.Box3().setFromObject(this.checkpoint);
+          this.checkpoint2Active = true;
+          this.checkpoint2Triggered = false;
+        }
       }
     }
 
     // If spawned, check collision
     if (
-      this.secondCheckpoint &&
-      this.secondCheckpointBox &&
-      !this.secondCheckpointTriggered
+      this.checkpoint2Active &&
+      this.checkpoint &&
+      this.checkpointBox &&
+      !this.checkpoint2Triggered
     ) {
-      this.secondCheckpointBox.setFromObject(this.secondCheckpoint);
+      this.checkpointBox.setFromObject(this.checkpoint);
       const playerPos = this.sceneManager.camera.position;
-      const min = this.secondCheckpointBox.min;
-      const max = this.secondCheckpointBox.max;
+      const min = this.checkpointBox.min;
+      const max = this.checkpointBox.max;
       if (
         playerPos.x >= min.x && playerPos.x <= max.x &&
         playerPos.z >= min.z && playerPos.z <= max.z
       ) {
-        this.secondCheckpointTriggered = true;
-        // You can play a sound or show a message here if desired
-        if (this.secondCheckpoint && this.sceneManager.scene) {
-          this.sceneManager.scene.remove(this.secondCheckpoint);
+        this.checkpoint2Triggered = true;
+        if (this.checkpoint) {
+          this.checkpoint.visible = false;
         }
-        this.secondCheckpoint = null;
-        this.secondCheckpointBox = null;
-        this.secondCheckpointMixer = null;
-        // Example: showSubtitle("Mission Complete!", 6000);
+        // Play speech_audio_2.mp3 and show subtitle, then respawn zombies, enable lights, and show zombie bar
+        this.afterSecondCheckpoint();
       }
     }
+  }
+
+  // Add this method for the third checkpoint logic
+  private checkThirdCheckpoint(): void {
+    // Only spawn after all zombies in the third wave are dead and not already spawned
+    if (
+      !this.checkpoint3Active &&
+      this.checkpoint2Triggered &&
+      this.modelManager &&
+      this.modelManager.zombieStates
+    ) {
+      const killed = this.modelManager.zombieStates.filter(z => z.dead).length;
+      if (killed >= this.modelManager.zombieStates.length) {
+        // Move and show the checkpoint as checkpoint 3 at spawn
+        if (this.checkpoint) {
+          this.checkpoint.position.set(
+            CONFIG.CAMERA.INITIAL_POSITION.x,
+            0.7,
+            CONFIG.CAMERA.INITIAL_POSITION.z
+          );
+          this.checkpoint.scale.set(10, 10, 10);
+          this.checkpoint.visible = true;
+          // Recreate bounding box for new position
+          this.checkpointBox = new THREE.Box3().setFromObject(this.checkpoint);
+          this.checkpoint3Active = true;
+          this.checkpoint3Triggered = false;
+        }
+      }
+    }
+
+    // If spawned, check collision
+    if (
+      this.checkpoint3Active &&
+      this.checkpoint &&
+      this.checkpointBox &&
+      !this.checkpoint3Triggered
+    ) {
+      this.checkpointBox.setFromObject(this.checkpoint);
+      const playerPos = this.sceneManager.camera.position;
+      const min = this.checkpointBox.min;
+      const max = this.checkpointBox.max;
+      if (
+        playerPos.x >= min.x && playerPos.x <= max.x &&
+        playerPos.z >= min.z && playerPos.z <= max.z
+      ) {
+        this.checkpoint3Triggered = true;
+        if (this.checkpoint) {
+          this.checkpoint.visible = false;
+        }
+        showMissionCompleteOverlay();
+      }
+    }
+  }
+
+  // New method to handle post-second-checkpoint logic
+  private afterSecondCheckpoint() {
+    // 1. Turn off the player's flashlight
+    this.gameState.flashlightOn = false;
+    this.lightingManager.flashlight.visible = false;
+
+    // 2. Turn on the 4 nearest street lights immediately
+    this.updateNearbyStreetLights();
+
+    // 3. Spawn zombies again immediately
+    this.respawnZombies();
+
+    // 4. Show zombie bar again
+    this.uiManager.showZombieBar();
+
+    // 5. Play speech_audio_2.mp3 and show subtitle (after zombies and lights)
+    playSpeechAudio2();
+  }
+
+  // Respawn zombies (same amount as original), reusing the already loaded zombie GLTF
+  private respawnZombies() {
+    // Remove old zombies from scene
+    for (const zombie of this.modelManager.zombies) {
+      this.sceneManager.scene.remove(zombie);
+    }
+    this.modelManager.zombies = [];
+    this.modelManager.zombieMixers = [];
+    this.modelManager.zombieStates = [];
+
+    // Use the previously loaded zombie GLTF for respawn
+    // We'll store the loaded zombie GLTF in ModelManager for reuse
+    if ((this.modelManager as any)._zombieGLTF) {
+      this.spawnZombiesFromGLTF((this.modelManager as any)._zombieGLTF, this.originalZombieCount);
+    } else {
+      // If not loaded yet, fallback to original spawnZombies
+      (this.modelManager as any).spawnZombies(this.originalZombieCount);
+    }
+  }
+
+  // Helper to spawn zombies from a cached GLTF
+  private spawnZombiesFromGLTF(gltf: any, count: number) {
+    for (let i = 0; i < count; i++) {
+      const model = SkeletonUtils.clone(gltf.scene);
+      model.scale.set(1.5, 1.5, 1.5);
+
+      let x, z;
+      let attempts = 0;
+      const minSpawnDistance = 180;
+      let distToPlayer = 0;
+      let tooCloseToOther = false;
+      do {
+        x = THREE.MathUtils.randFloat(GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
+        z = THREE.MathUtils.randFloat(GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
+        distToPlayer = Math.sqrt(
+          Math.pow(x - CONFIG.CAMERA.INITIAL_POSITION.x, 2) +
+          Math.pow(z - CONFIG.CAMERA.INITIAL_POSITION.z, 2)
+        );
+        tooCloseToOther = this.modelManager.zombies.some(zb => zb.position.distanceTo(new THREE.Vector3(x, 0.05, z)) < 2);
+      } while (
+        (distToPlayer < minSpawnDistance || tooCloseToOther) && ++attempts < 20
+      );
+
+      model.position.set(x, 0.05, z);
+
+      model.traverse((child: any) => {
+        child.castShadow = child.receiveShadow = true;
+      });
+
+      const mixer = new THREE.AnimationMixer(model);
+      const walkAnim = gltf.animations.find((a: any) => a.name.toLowerCase().includes('walk')) || gltf.animations[0];
+      const action = mixer.clipAction(walkAnim);
+      action.play();
+      action.timeScale = 2;
+      action.time = Math.random() * action.getClip().duration;
+
+      this.modelManager.zombieMixers.push(mixer);
+      this.modelManager.zombies.push(model);
+      // Each zombie starts with 3 health (3 shots to kill)
+      this.modelManager.zombieStates.push({ health: 3, dead: false, dying: false, deathTimer: 0 });
+      this.sceneManager.scene.add(model);
+    }
+  }
+
+  // Enable all lights in map.glb
+  private enableAllMapLights() {
+    if (!this.sceneManager.scene) return;
+
+    // 1. Collect all eligible street lights (exclude directional, muzzle, flashlight)
+    const playerPos = this.sceneManager.camera.position;
+    const streetLights: any[] = [];
+    this.sceneManager.scene.traverse((obj: any) => {
+      // Only consider PointLight or SpotLight, but not the player's flashlight or muzzle flash
+      if (
+        (obj.isPointLight || obj.isSpotLight) &&
+        obj !== this.lightingManager.flashlight &&
+        obj !== this.lightingManager.muzzleFlash &&
+        obj.visible === false // Only those that are off
+      ) {
+        // Exclude directional lights
+        if (!obj.isDirectionalLight) {
+          // Store distance for sorting
+          obj._distanceToPlayer = obj.position.distanceTo(playerPos);
+          streetLights.push(obj);
+        }
+      }
+    });
+
+    // 2. Sort by distance and enable the 4 closest street lights
+    streetLights.sort((a, b) => a._distanceToPlayer - b._distanceToPlayer);
+    for (let i = 0; i < streetLights.length; i++) {
+      if (i < 4) {
+        streetLights[i].visible = true;
+        if (streetLights[i].intensity !== undefined) streetLights[i].intensity = 1.5;
+      } else {
+        streetLights[i].visible = false;
+        if (streetLights[i].intensity !== undefined) streetLights[i].intensity = 0;
+      }
+    }
+
+    // 3. Always ensure the player's flashlight and muzzle flash are enabled/controlled elsewhere
+    // (No changes needed here, as those are managed by LightingManager)
   }
 }
 
@@ -1139,7 +1429,7 @@ function setupShotAudio() {
 function playShotSound() {
   const audio = document.createElement('audio');
   audio.src = '/shot.mp3';
-  audio.volume = 0.7;
+  audio.volume = 0.2;
   audio.autoplay = true;
   audio.style.display = 'none';
   document.body.appendChild(audio);
@@ -1291,9 +1581,6 @@ function playSpeechAudio1() {
   document.body.appendChild(audio);
   audio.addEventListener('ended', () => {
     audio.remove();
-    // Optionally hide subtitle exactly when audio ends:
-    const subtitle = document.getElementById('subtitle-box');
-    if (subtitle) subtitle.style.display = 'none';
   });
 }
 
@@ -1325,4 +1612,121 @@ function showSubtitle(text: string, duration: number = 15000) {
   setTimeout(() => {
     if (subtitle) subtitle.style.display = 'none';
   }, duration);
+}
+
+// Update showMissionFailedOverlay to include a "Star Project on GitHub" button
+function showMissionFailedOverlay() {
+  let overlay = document.getElementById("mission-failed-overlay");
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = "mission-failed-overlay";
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100vw';
+    overlay.style.height = '100vh';
+    overlay.style.background = 'rgba(0,0,0,0.85)';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'column';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '2000';
+    overlay.style.color = '#ff3c3c';
+    overlay.style.fontSize = '3rem';
+    overlay.style.fontFamily = 'monospace';
+    overlay.style.fontWeight = 'bold';
+
+    overlay.innerHTML = `
+      Mission Failed!
+      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" rel="noopener"
+        style="
+          margin-top: 32px;
+          padding: 14px 32px;
+          background: #24292f;
+          color: #fff;
+          border-radius: 8px;
+          font-size: 1.2rem;
+          font-family: monospace;
+          font-weight: bold;
+          text-decoration: none;
+          box-shadow: 0 2px 12px #000a;
+          transition: background 0.2s;
+          display: inline-block;
+        "
+        onmouseover="this.style.background='#57606a'"
+        onmouseout="this.style.background='#24292f'"
+      >⭐ Star this Project on GitHub</a>
+    `;
+    document.body.appendChild(overlay);
+  }
+  // Unlock the pointer (show mouse)
+  if (document.exitPointerLock) document.exitPointerLock();
+}
+
+function showMissionCompleteOverlay() {
+  let overlay = document.getElementById("mission-complete-overlay");
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = "mission-complete-overlay";
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100vw';
+    overlay.style.height = '100vh';
+    overlay.style.background = 'rgba(0,0,0,0.85)';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'column';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '2000';
+    overlay.style.color = '#3cff3c';
+    overlay.style.fontSize = '3rem';
+    overlay.style.fontFamily = 'monospace';
+    overlay.style.fontWeight = 'bold';
+
+    overlay.innerHTML = `
+      Mission Complete!
+      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" rel="noopener"
+        style="
+          margin-top: 32px;
+          padding: 14px 32px;
+          background: #24292f;
+          color: #fff;
+          border-radius: 8px;
+          font-size: 1.2rem;
+          font-family: monospace;
+          font-weight: bold;
+          text-decoration: none;
+          box-shadow: 0 2px 12px #000a;
+          transition: background 0.2s;
+          display: inline-block;
+        "
+        onmouseover="this.style.background='#57606a'"
+        onmouseout="this.style.background='#24292f'"
+      >⭐ Star this Project on GitHub</a>
+    `;
+    document.body.appendChild(overlay);
+  }
+  // Unlock the pointer (show mouse)
+  if (document.exitPointerLock) document.exitPointerLock();
+}
+
+// Modify playSpeechAudio2 to accept a callback
+function playSpeechAudio2(onEnd?: () => void) {
+  showSubtitle(
+    "Sector clear. Good work, Echo. Stand by for further orders.",
+    8000 // Adjust duration to match your audio length in ms
+  );
+  const audio = document.createElement('audio');
+  audio.src = '/speech_audio_2.mp3';
+  audio.volume = 1.0;
+  audio.autoplay = true;
+  audio.style.display = 'none';
+  document.body.appendChild(audio);
+  audio.addEventListener('ended', () => {
+    audio.remove();
+    const subtitle = document.getElementById('subtitle-box');
+    if (subtitle) subtitle.style.display = 'none';
+    if (onEnd) onEnd();
+  });
 }
