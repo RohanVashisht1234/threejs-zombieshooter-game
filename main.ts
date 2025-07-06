@@ -186,7 +186,6 @@ class ModelManager {
   public gunMixer?: THREE.AnimationMixer;
   public gunActions: THREE.AnimationAction[] = [];
   public zombieStates: ZombieState[] = [];
-  private _zombieGLTF: any = null; // cache for reuse
   constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, loadingManager: THREE.LoadingManager) {
     this.scene = scene;
     this.camera = camera;
@@ -230,12 +229,11 @@ class ModelManager {
 
   private loadZombie(): void {
     this.loader.load('/zombie_hazmat.glb', (gltf) => {
-      this._zombieGLTF = gltf; // cache for respawn
       for (let i = 0; i < CONFIG.ZOMBIE.COUNT; i++) {
         const model = SkeletonUtils.clone(gltf.scene);
         model.scale.set(1.5, 1.5, 1.5);
 
-        let x, z;
+        let x: number | undefined, z: number | undefined;
         let attempts = 0;
         const minSpawnDistance = 180;
         let distToPlayer = 0;
@@ -289,69 +287,7 @@ class ModelManager {
     });
   }
 
-  // Respawn zombies (same amount as original), reusing the already loaded zombie GLTF
-  private respawnZombies() {
-    // Remove old zombies from scene
-    for (const zombie of this.zombies) {
-      this.scene.remove(zombie);
-    }
-    this.zombies = [];
-    this.zombieMixers = [];
-    this.zombieStates = [];
 
-    // Use the previously loaded zombie GLTF for respawn
-    // We'll store the loaded zombie GLTF in ModelManager for reuse
-    if ((this as any)._zombieGLTF) {
-      this.spawnZombiesFromGLTF((this as any)._zombieGLTF, CONFIG.ZOMBIE.COUNT);
-    } else {
-      // If not loaded yet, fallback to original spawnZombies
-      (this as any).spawnZombies(CONFIG.ZOMBIE.COUNT);
-    }
-  }
-
-  // Helper to spawn zombies from a cached GLTF
-  private spawnZombiesFromGLTF(gltf: any, count: number) {
-    for (let i = 0; i < count; i++) {
-      const model = SkeletonUtils.clone(gltf.scene);
-      model.scale.set(1.5, 1.5, 1.5);
-
-      let x, z;
-      let attempts = 0;
-      const minSpawnDistance = 180;
-      let distToPlayer = 0;
-      let tooCloseToOther = false;
-      do {
-        x = THREE.MathUtils.randFloat(GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
-        z = THREE.MathUtils.randFloat(GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
-        distToPlayer = Math.sqrt(
-          Math.pow(x - CONFIG.CAMERA.INITIAL_POSITION.x, 2) +
-          Math.pow(z - CONFIG.CAMERA.INITIAL_POSITION.z, 2)
-        );
-        tooCloseToOther = this.zombies.some(zb => zb.position.distanceTo(new THREE.Vector3(x, 0.05, z)) < 2);
-      } while (
-        (distToPlayer < minSpawnDistance || tooCloseToOther) && ++attempts < 20
-      );
-
-      model.position.set(x, 0.05, z);
-
-      model.traverse((child: any) => {
-        child.castShadow = child.receiveShadow = true;
-      });
-
-      const mixer = new THREE.AnimationMixer(model);
-      const walkAnim = gltf.animations.find((a: any) => a.name.toLowerCase().includes('walk')) || gltf.animations[0];
-      const action = mixer.clipAction(walkAnim);
-      action.play();
-      action.timeScale = 2;
-      action.time = Math.random() * action.getClip().duration;
-
-      this.zombieMixers.push(mixer);
-      this.zombies.push(model);
-      // Each zombie starts with 3 health (3 shots to kill)
-      this.zombieStates.push({ health: 3, dead: false, dying: false, deathTimer: 0 });
-      this.scene.add(model);
-    }
-  }
 }
 
 class WeatherManager {
@@ -611,26 +547,6 @@ class EnemyManager {
     this.camera = camera;
   }
 
-  // Helper to get death animation for a zombie
-  private getDeathAnimationForZombie(zombieIdx: number): THREE.AnimationClip | undefined {
-    // Assumes all zombies are clones of a GLTF scene with the same animations
-    const zombie = this.modelManager.zombies[zombieIdx];
-    const mixer = this.modelManager.zombieMixers[zombieIdx];
-    // Try to find a death animation
-    const gltfAnimList = mixer.getRoot() && (mixer as any)._actions.length
-      ? (mixer as any)._actions.map((a: any) => a._clip)
-      : [];
-    let deathAnim = gltfAnimList.find((clip: THREE.AnimationClip) =>
-      clip.name.toLowerCase().includes('death') || clip.name.toLowerCase().includes('die')
-    );
-    // fallback: use any animation with "fall" in the name
-    if (!deathAnim) {
-      deathAnim = gltfAnimList.find((clip: THREE.AnimationClip) =>
-        clip.name.toLowerCase().includes('fall')
-      );
-    }
-    return deathAnim;
-  }
 
   public updateZombie(delta: number): void {
     if (!this.modelManager.zombies.length) return;
@@ -913,7 +829,7 @@ class GameLoadingManager {
       this.show();
       this.setProgress(0);
     };
-    this.manager.onProgress = (url, itemsLoaded, itemsTotal) => {
+    this.manager.onProgress = (_url, itemsLoaded, itemsTotal) => {
       this.setProgress((itemsLoaded / itemsTotal) * 100);
     };
     this.manager.onLoad = () => {
@@ -1340,7 +1256,7 @@ class Game {
       const model = SkeletonUtils.clone(gltf.scene);
       model.scale.set(1.5, 1.5, 1.5);
 
-      let x, z;
+      let x: number | undefined, z: number | undefined;
       let attempts = 0;
       const minSpawnDistance = 180;
       let distToPlayer = 0;
@@ -1378,45 +1294,6 @@ class Game {
     }
   }
 
-  // Enable all lights in map.glb
-  private enableAllMapLights() {
-    if (!this.sceneManager.scene) return;
-
-    // 1. Collect all eligible street lights (exclude directional, muzzle, flashlight)
-    const playerPos = this.sceneManager.camera.position;
-    const streetLights: any[] = [];
-    this.sceneManager.scene.traverse((obj: any) => {
-      // Only consider PointLight or SpotLight, but not the player's flashlight or muzzle flash
-      if (
-        (obj.isPointLight || obj.isSpotLight) &&
-        obj !== this.lightingManager.flashlight &&
-        obj !== this.lightingManager.muzzleFlash &&
-        obj.visible === false // Only those that are off
-      ) {
-        // Exclude directional lights
-        if (!obj.isDirectionalLight) {
-          // Store distance for sorting
-          obj._distanceToPlayer = obj.position.distanceTo(playerPos);
-          streetLights.push(obj);
-        }
-      }
-    });
-
-    // 2. Sort by distance and enable the 4 closest street lights
-    streetLights.sort((a, b) => a._distanceToPlayer - b._distanceToPlayer);
-    for (let i = 0; i < streetLights.length; i++) {
-      if (i < 4) {
-        streetLights[i].visible = true;
-        if (streetLights[i].intensity !== undefined) streetLights[i].intensity = 1.5;
-      } else {
-        streetLights[i].visible = false;
-        if (streetLights[i].intensity !== undefined) streetLights[i].intensity = 0;
-      }
-    }
-
-    // 3. Always ensure the player's flashlight and muzzle flash are enabled/controlled elsewhere
-    // (No changes needed here, as those are managed by LightingManager)
-  }
 }
 
 // -- Audio and main code unchanged from your original (not shown for brevity) --
@@ -1451,14 +1328,6 @@ function setupBgAudio() {
   });
 }
 
-let shotAudio: HTMLAudioElement;
-function setupShotAudio() {
-  shotAudio = document.createElement('audio');
-  shotAudio.src = '/shot.ogg';
-  shotAudio.volume = 0.5;
-  shotAudio.preload = 'auto';
-  document.body.appendChild(shotAudio);
-}
 function playShotSound() {
   const audio = document.createElement('audio');
   audio.src = '/shot.ogg';
