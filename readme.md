@@ -1,6 +1,6 @@
 # 🧟‍♂️ Zeta Forces: Zombie Shooter
 
-![Zeta Forces Screenshot](./public/image.png)
+![Zeta Forces Screenshot](./public/image.webp)
 
 > **Made in Three.js** • Survive the outbreak • Restore the lights • Return to base
 
@@ -39,7 +39,7 @@ If you enjoyed the game or appreciate the effort, a ⭐ on this repository would
   Programmer, map designer, game designer, voice actor, and the one who brought everything to life.
 
 * **Alok Nair** —
-  Music & sound suggester, asset researcher, gameplay tester, and gave invaluable feedback on various fixes.
+  Music & sound manager, asset researcher, gameplay tester, and gave invaluable feedback on various fixes.
 
 ---
 

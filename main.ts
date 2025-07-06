@@ -6,6 +6,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { GammaCorrectionShader } from 'three/examples/jsm/shaders/GammaCorrectionShader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 
 const CONFIG = {
   CAMERA: {
@@ -190,6 +191,7 @@ class ModelManager {
     this.scene = scene;
     this.camera = camera;
     this.loader = new GLTFLoader(loadingManager);
+    this.loader.setMeshoptDecoder(MeshoptDecoder);
     this.loadModels();
   }
 
@@ -995,6 +997,7 @@ class Game {
 
     // Load first checkpoint at (0, 0.7, 0)
     const loader = new GLTFLoader(this.loadingManager.manager);
+    loader.setMeshoptDecoder(MeshoptDecoder);
     loader.load('/checkpoint.glb', (gltf) => {
       this.checkpoint = gltf.scene;
       this.checkpoint.position.set(0, 0.7, 0);
@@ -1234,7 +1237,7 @@ class Game {
         if (this.checkpoint) {
           this.checkpoint.visible = false;
         }
-        // Play speech_audio_2.mp3 and show subtitle, then respawn zombies, enable lights, and show zombie bar
+        // Play speech_audio_2.ogg and show subtitle, then respawn zombies, enable lights, and show zombie bar
         this.afterSecondCheckpoint();
       }
     }
@@ -1307,7 +1310,7 @@ class Game {
     // 4. Show zombie bar again
     this.uiManager.showZombieBar();
 
-    // 5. Play speech_audio_2.mp3 and show subtitle (after zombies and lights)
+    // 5. Play speech_audio_2.ogg and show subtitle (after zombies and lights)
     playSpeechAudio2();
   }
 
@@ -1423,7 +1426,7 @@ let bgAudio: HTMLAudioElement; // Add this line
 
 function setupRainAudio() {
   rainAudio = document.createElement('audio');
-  rainAudio.src = '/rain.mp3';
+  rainAudio.src = '/rain.ogg';
   rainAudio.loop = true;
   rainAudio.volume = 0.2;
   rainAudio.style.display = 'none';
@@ -1437,7 +1440,7 @@ function setupRainAudio() {
 // Add this function
 function setupBgAudio() {
   bgAudio = document.createElement('audio');
-  bgAudio.src = '/bgsound.mp3';
+  bgAudio.src = '/bgsound.ogg';
   bgAudio.loop = true;
   bgAudio.volume = 0.8;
   bgAudio.style.display = 'none';
@@ -1451,14 +1454,14 @@ function setupBgAudio() {
 let shotAudio: HTMLAudioElement;
 function setupShotAudio() {
   shotAudio = document.createElement('audio');
-  shotAudio.src = '/shot.mp3';
+  shotAudio.src = '/shot.ogg';
   shotAudio.volume = 0.5;
   shotAudio.preload = 'auto';
   document.body.appendChild(shotAudio);
 }
 function playShotSound() {
   const audio = document.createElement('audio');
-  audio.src = '/shot.mp3';
+  audio.src = '/shot.ogg';
   audio.volume = 0.2;
   audio.autoplay = true;
   audio.style.display = 'none';
@@ -1469,7 +1472,7 @@ function playShotSound() {
 }
 function playReloadSound() {
   const audio = document.createElement('audio');
-  audio.src = '/reload.mp3';
+  audio.src = '/reload.ogg';
   audio.volume = 0.7;
   audio.autoplay = true;
   audio.style.display = 'none';
@@ -1487,7 +1490,7 @@ let zombiePanner: PannerNode | null = null;
 
 async function loadZombieAudioBuffer() {
   if (!zombieAudioContext) zombieAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-  const response = await fetch('/zombie.mp3');
+  const response = await fetch('/zombie.ogg');
   const arrayBuffer = await response.arrayBuffer();
   zombieAudioBuffer = await zombieAudioContext.decodeAudioData(arrayBuffer);
 }
@@ -1692,7 +1695,7 @@ function playSpeechAudio1() {
     15000
   );
   const audio = document.createElement('audio');
-  audio.src = '/speech_audio_1.mp3';
+  audio.src = '/speech_audio_1.ogg';
   audio.volume = 1.0;
   audio.autoplay = true;
   audio.style.display = 'none';
@@ -1810,7 +1813,7 @@ function playSpeechAudio2(onEnd?: () => void) {
     8000
   );
   const audio = document.createElement('audio');
-  audio.src = '/speech_audio_2.mp3';
+  audio.src = '/speech_audio_2.ogg';
   audio.volume = 1.0;
   audio.autoplay = true;
   audio.style.display = 'none';
