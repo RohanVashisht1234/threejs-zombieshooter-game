@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>Zombie Strike</title>
   <style>
     :root,
@@ -19,31 +19,43 @@
 
     #container {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
+      inset: 0;
       z-index: 0;
+    }
+
+    #subtitle-box {
+      position: fixed;
+      bottom: 7%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30, 40, 30, 0.72);
+      color: #3cff3c;
+      padding: 1.2rem 2rem;
+      border-radius: 12px;
+      font-size: 1.25rem;
+      font-family: monospace;
+      font-weight: bold;
+      letter-spacing: 0.02em;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.67);
+      z-index: 1000;
+      text-align: center;
+      pointer-events: none;
+      max-width: 80vw;
+      display: none;
     }
 
     #start-screen {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: url("/image.webp"), linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(5, 5, 20, 0.95));
-      background-size: cover;
-      background-position: center;
-      background-repeat: no-repeat;
+      inset: 0;
+      background: url("/image.webp") center / cover no-repeat;
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 10;
+      padding: 2rem;
       color: #00f0ff;
       text-shadow: 0 0 10px #00f0ff, 0 0 20px #00f0ff;
       animation: fadeIn 1s ease-out;
-      padding: 2rem;
       box-sizing: border-box;
     }
 
@@ -54,8 +66,12 @@
       gap: 2rem;
       max-width: 800px;
       width: 100%;
-      overflow-y: auto;
       max-height: 90vh;
+      overflow-y: auto;
+      padding: 2rem;
+      border-radius: 16px;
+      box-shadow: 0 0 20px #00f0ff55;
+      background: rgba(0, 0, 0, 0.4);
     }
 
     #title {
@@ -81,66 +97,6 @@
       background: #00cce0;
     }
 
-    @keyframes glow {
-      from {
-        text-shadow: 0 0 10px #00f0ff, 0 0 20px #00f0ff;
-      }
-
-      to {
-        text-shadow: 0 0 20px #00f0ff, 0 0 40px #00f0ff;
-      }
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-
-      to {
-        opacity: 1;
-      }
-    }
-
-    #loading-screen {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 100;
-      background: rgba(10, 10, 20, 0.95);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-    }
-
-    #loading-text {
-      color: #fff;
-      font-size: 3rem;
-      margin-bottom: 2rem;
-      letter-spacing: 0.2em;
-      text-shadow: 0 0 20px #00f0ff;
-      animation: glow 2s infinite alternate;
-    }
-
-    #loading-bar-bg {
-      width: 200px;
-      height: 16px;
-      background: #222;
-      border-radius: 8px;
-      overflow: hidden;
-      margin-top: 1rem;
-    }
-
-    #loading-bar {
-      width: 0;
-      height: 100%;
-      background: linear-gradient(90deg, #00f0ff, #00cce0);
-      transition: width 0.3s;
-    }
-
     #github-star {
       display: inline-flex;
       align-items: center;
@@ -164,7 +120,7 @@
 
     #credits {
       color: #b6faff;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(0, 0, 0, 0.25);
       border-radius: 12px;
       padding: 1.5rem 2rem;
       font-size: 1.1rem;
@@ -188,6 +144,114 @@
     #credits strong {
       color: #00f0ff;
     }
+
+    #loading-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 10, 20, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    #loading-text {
+      color: #fff;
+      font-size: 3rem;
+      margin-bottom: 2rem;
+      letter-spacing: 0.2em;
+      text-shadow: 0 0 20px #00f0ff;
+      animation: glow 2s infinite alternate;
+    }
+
+    #loading-bar-bg {
+      width: 250px;
+      height: 20px;
+      background: #111;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-top: 1rem;
+      box-shadow: 0 0 10px #00f0ff44;
+    }
+
+    #loading-bar {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #00f0ff, #00cce0);
+      transition: width 0.3s;
+    }
+
+    .mission-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 3rem;
+      font-family: monospace;
+      font-weight: bold;
+      padding: 2rem;
+      background-color: rgba(0, 0, 0, 0.85);
+      z-index: 2000;
+    }
+
+    .mission-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2rem;
+    }
+
+    #mission-complete-overlay {
+      color: #3cff3c;
+      display: none;
+    }
+
+    #mission-failed-overlay {
+      color: #ff3c3c;
+      display: none;
+    }
+
+    .mission-link {
+      padding: 14px 32px;
+      background: #24292f;
+      color: #fff;
+      border-radius: 8px;
+      font-size: 1.2rem;
+      font-family: monospace;
+      font-weight: bold;
+      text-decoration: none;
+      box-shadow: 0 2px 12px #000a;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .mission-link:hover {
+      background: #57606a;
+      transform: scale(1.05);
+    }
+
+    @keyframes glow {
+      from {
+        text-shadow: 0 0 10px #00f0ff, 0 0 20px #00f0ff;
+      }
+
+      to {
+        text-shadow: 0 0 20px #00f0ff, 0 0 40px #00f0ff;
+      }
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
   </style>
 </head>
 
@@ -196,55 +260,33 @@
     <div id="start-content">
       <div id="title">⚡ ZOMBIE STRIKE ⚡</div>
       <button id="start-button">Start Game</button>
-
-      <a id="github-star" href="https://github.com/rohanvashisht1234/threejs-zombieshooter-game" target="_blank">
-        ⭐ Star this project on GitHub
-      </a>
-
+      <a id="github-star" href="https://github.com/rohanvashisht1234/threejs-zombieshooter-game" target="_blank">⭐ Star this project on GitHub</a>
       <div id="credits">
         <ul>
-          <li><strong>Rohan Vashisht</strong> — Programmer, map designer, game designer, voice actor, and the one who
-            brought everything to life.</li>
-          <li><strong>Alok Nair</strong> — Music & sound manager, asset researcher, gameplay tester, and gave
-            invaluable feedback on various fixes.</li>
+          <li><strong>Rohan Vashisht</strong> — Programmer, map designer, game designer, voice actor, and the one who brought everything to life.</li>
+          <li><strong>Alok Nair</strong> — Music & sound manager, asset researcher, gameplay tester, and gave invaluable feedback on various fixes.</li>
         </ul>
         <div style="margin-top:1.5rem;">
           <strong>🔊 Credits</strong>
           <ul>
-            <li>🎵 <strong>Music</strong><br>Karl Casey @ White Bat Audio – YouTube</li>
-            <li>🎧 <strong>Sound Effects</strong><br>Pixabay – pixabay.com</li>
-            <li>
-              <strong>3D Assets:</strong><br>
+            <li>🎵 <strong>Music:</strong> Karl Casey @ White Bat Audio – YouTube</li>
+            <li>🎧 <strong>Sound Effects:</strong> Pixabay – pixabay.com</li>
+            <li><strong>3D Assets:</strong>
               <ul>
-                <li><a href="https://sketchfab.com/3d-models/zombie-hazmat-49b3b4307f6a4d2386fdb02354158d04#download"
-                    target="_blank">Zombie Hazmat</a></li>
-                <li><a href="https://sketchfab.com/3d-models/fps-ak-74m-animations-94be8385c402474cacd39bc096c6ca14"
-                    target="_blank">FPS AK-74M + Animations</a></li>
-                <li><a href="https://sketchfab.com/3d-models/fence-0adbc93269c94b70b99d0627a3ee54f5"
-                    target="_blank">Fence</a></li>
-                <li><a href="https://sketchfab.com/3d-models/wall-door-19mb-cac51dfd82784736a726bba118e86de9"
-                    target="_blank">Wall + Door</a></li>
-                <li><a href="https://sketchfab.com/3d-models/sand-bags-e02685e0047948aabc75227cb1962d05#download"
-                    target="_blank">Sandbags</a></li>
-                <li><a
-                    href="https://sketchfab.com/3d-models/prototipo-speciale-police-95-low-poly-model-63aa215521334cef9c4d8c4c391252ad"
-                    target="_blank">Police Car (Low Poly)</a></li>
-                <li><a
-                    href="https://sketchfab.com/3d-models/crashed-abandoned-car-game-ready-66ef51a84c9843dda53bf0b4b9020011#download"
-                    target="_blank">Crashed Abandoned Car</a></li>
-                <li><a href="https://sketchfab.com/3d-models/electric-box-c7bba1e774d94e67b410e4c9fdfdee34#download"
-                    target="_blank">Electric Box</a></li>
-                <li><a
-                    href="https://sketchfab.com/3d-models/wwii-air-trafic-control-tower-9e7f035ed7f4449593ad1bebe6ac71b1"
-                    target="_blank">WWII Air Traffic Control Tower</a></li>
-                <li><a
-                    href="https://sketchfab.com/3d-models/psx-style-brick-wall-80e53aac4eaa4aa99750f2429a4fe9f2#download"
-                    target="_blank">PSX Style Brick Wall</a></li>
+                <li><a href="https://sketchfab.com/3d-models/zombie-hazmat-49b3b4307f6a4d2386fdb02354158d04#download" target="_blank">Zombie Hazmat</a></li>
+                <li><a href="https://sketchfab.com/3d-models/fps-ak-74m-animations-94be8385c402474cacd39bc096c6ca14" target="_blank">FPS AK-74M + Animations</a></li>
+                <li><a href="https://sketchfab.com/3d-models/fence-0adbc93269c94b70b99d0627a3ee54f5" target="_blank">Fence</a></li>
+                <li><a href="https://sketchfab.com/3d-models/wall-door-19mb-cac51dfd82784736a726bba118e86de9" target="_blank">Wall + Door</a></li>
+                <li><a href="https://sketchfab.com/3d-models/sand-bags-e02685e0047948aabc75227cb1962d05#download" target="_blank">Sandbags</a></li>
+                <li><a href="https://sketchfab.com/3d-models/prototipo-speciale-police-95-low-poly-model-63aa215521334cef9c4d8c4c391252ad" target="_blank">Police Car (Low Poly)</a></li>
+                <li><a href="https://sketchfab.com/3d-models/crashed-abandoned-car-game-ready-66ef51a84c9843dda53bf0b4b9020011#download" target="_blank">Crashed Abandoned Car</a></li>
+                <li><a href="https://sketchfab.com/3d-models/electric-box-c7bba1e774d94e67b410e4c9fdfdee34#download" target="_blank">Electric Box</a></li>
+                <li><a href="https://sketchfab.com/3d-models/wwii-air-trafic-control-tower-9e7f035ed7f4449593ad1bebe6ac71b1" target="_blank">WWII Air Traffic Control Tower</a></li>
+                <li><a href="https://sketchfab.com/3d-models/psx-style-brick-wall-80e53aac4eaa4aa99750f2429a4fe9f2#download" target="_blank">PSX Style Brick Wall</a></li>
               </ul>
             </li>
           </ul>
         </div>
-
       </div>
     </div>
   </div>
@@ -257,6 +299,22 @@
   </div>
 
   <div id="container"></div>
+  <div id="subtitle-box"></div>
+
+  <div id="mission-complete-overlay" class="mission-overlay">
+    <div class="mission-content">
+      <div>Mission Complete!</div>
+      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" class="mission-link">⭐ Star this Project on GitHub</a>
+    </div>
+  </div>
+
+  <div id="mission-failed-overlay" class="mission-overlay">
+    <div class="mission-content">
+      <div>Mission Failed!</div>
+      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" class="mission-link">⭐ Star this Project on GitHub</a>
+    </div>
+  </div>
+
   <script type="module" src="/main.ts"></script>
 </body>
 

@@ -141,7 +141,6 @@ class LightingManager {
 
     this.muzzleFlash = new THREE.PointLight(0xffaa33, 7, 100);
     this.muzzleFlash.visible = false;
-    this.muzzleFlash.castShadow = true;
     this.muzzleFlash.shadow.normalBias = 1;
     this.muzzleFlash.position.set(0, 0, -1.5);
     this.camera.add(this.muzzleFlash);
@@ -186,6 +185,7 @@ class ModelManager {
   public gunMixer?: THREE.AnimationMixer;
   public gunActions: THREE.AnimationAction[] = [];
   public zombieStates: ZombieState[] = [];
+  zombieGLTF: any;
   constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, loadingManager: THREE.LoadingManager) {
     this.scene = scene;
     this.camera = camera;
@@ -204,10 +204,6 @@ class ModelManager {
     this.loader.load('/map.glb', (gltf) => {
       gltf.scene.traverse((o: any) => {
         o.castShadow = o.receiveShadow = true;
-        if (o.animations && o.animations.length > 0) {
-          const mixer = new THREE.AnimationMixer(o);
-          mixer.clipAction(o.animations[1]).play();
-        }
         if ((o as THREE.PointLight).isLight) {
           (o as THREE.PointLight).shadow.bias = -0.0009;
         }
@@ -229,6 +225,7 @@ class ModelManager {
 
   private loadZombie(): void {
     this.loader.load('/zombie_hazmat.glb', (gltf) => {
+      this.zombieGLTF = gltf;
       for (let i = 0; i < CONFIG.ZOMBIE.COUNT; i++) {
         const model = SkeletonUtils.clone(gltf.scene);
         model.scale.set(1.5, 1.5, 1.5);
@@ -257,8 +254,7 @@ class ModelManager {
         });
 
         const mixer = new THREE.AnimationMixer(model);
-        const walkAnim = gltf.animations.find(a => a.name.toLowerCase().includes('walk')) || gltf.animations[0];
-        const action = mixer.clipAction(walkAnim);
+        const action = mixer.clipAction(gltf.animations[3]);
         action.play();
         action.timeScale = 2;
         action.time = Math.random() * action.getClip().duration;
@@ -918,20 +914,10 @@ class Game {
       this.checkpoint = gltf.scene;
       this.checkpoint.position.set(0, 0.7, 0);
       this.checkpoint.scale.set(10, 10, 10);
-      this.checkpoint.traverse((child: any) => {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      });
       this.sceneManager.scene.add(this.checkpoint);
 
-      // Animation
-      if (gltf.animations && gltf.animations.length > 0) {
-        this.checkpointMixer = new THREE.AnimationMixer(this.checkpoint);
-        gltf.animations.forEach((clip) => {
-          this.checkpointMixer!.clipAction(clip).play();
-        });
-      }
-
+      this.checkpointMixer = new THREE.AnimationMixer(this.checkpoint);
+      this.checkpointMixer!.clipAction(gltf.animations[0]).play();
       // Compute bounding box for collision
       this.checkpointBox = new THREE.Box3().setFromObject(this.checkpoint);
     });
@@ -1242,11 +1228,10 @@ class Game {
 
     // Use the previously loaded zombie GLTF for respawn
     // We'll store the loaded zombie GLTF in ModelManager for reuse
-    if ((this.modelManager as any)._zombieGLTF) {
-      this.spawnZombiesFromGLTF((this.modelManager as any)._zombieGLTF, this.originalZombieCount);
+    if (this.modelManager.zombieGLTF) {
+      this.spawnZombiesFromGLTF(this.modelManager.zombieGLTF, this.originalZombieCount);
     } else {
-      // If not loaded yet, fallback to original spawnZombies
-      (this.modelManager as any).spawnZombies(this.originalZombieCount);
+      console.error('Zombie GLTF not loaded yet! Cannot respawn zombies.');
     }
   }
 
@@ -1280,8 +1265,7 @@ class Game {
       });
 
       const mixer = new THREE.AnimationMixer(model);
-      const walkAnim = gltf.animations.find((a: any) => a.name.toLowerCase().includes('walk')) || gltf.animations[0];
-      const action = mixer.clipAction(walkAnim);
+      const action = mixer.clipAction(gltf.animations[3]);
       action.play();
       action.timeScale = 2;
       action.time = Math.random() * action.getClip().duration;
@@ -1310,7 +1294,7 @@ function setupRainAudio() {
   document.body.appendChild(rainAudio);
   rainAudio.addEventListener('ended', () => {
     rainAudio.currentTime = 0;
-    rainAudio.play().catch(() => {});
+    rainAudio.play().catch(() => { });
   });
 }
 
@@ -1324,7 +1308,7 @@ function setupBgAudio() {
   document.body.appendChild(bgAudio);
   bgAudio.addEventListener('ended', () => {
     bgAudio.currentTime = 0;
-    bgAudio.play().catch(() => {});
+    bgAudio.play().catch(() => { });
   });
 }
 
@@ -1436,11 +1420,11 @@ function main() {
         // Always play rain and bg music, even if previously stopped
         if (rainAudio) {
           rainAudio.loop = true;
-          rainAudio.play().catch(() => {});
+          rainAudio.play().catch(() => { });
         }
         if (bgAudio) {
           bgAudio.loop = true;
-          bgAudio.play().catch(() => {});
+          bgAudio.play().catch(() => { });
         }
         await loadZombieAudioBuffer();
         game.startAfterLoading();
@@ -1451,45 +1435,45 @@ function main() {
   });
 
   function showClickToPlay(onClick: () => void) {
-  const overlay = document.createElement('div');
-  overlay.style.position = 'fixed';
-  overlay.style.top = '0';
-  overlay.style.left = '0';
-  overlay.style.width = '100vw';
-  overlay.style.height = '100vh';
-  overlay.style.background = 'rgba(0,0,0,0.7)';
-  overlay.style.display = 'flex';
-  overlay.style.flexDirection = 'column';
-  overlay.style.alignItems = 'center';
-  overlay.style.justifyContent = 'center';
-  overlay.style.zIndex = '200';
-  overlay.style.color = '#fff';
-  overlay.style.cursor = 'pointer';
+    const overlay = document.createElement('div');
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100vw';
+    overlay.style.height = '100vh';
+    overlay.style.background = 'rgba(0,0,0,0.7)';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'column';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = '200';
+    overlay.style.color = '#fff';
+    overlay.style.cursor = 'pointer';
 
-  const title = document.createElement('div');
-  title.innerText = 'Click to Play';
-  title.style.fontSize = '2rem';
+    const title = document.createElement('div');
+    title.innerText = 'Click to Play';
+    title.style.fontSize = '2rem';
 
-  const instructions = document.createElement('div');
-  instructions.style.fontSize = '1.2rem';
-  instructions.style.marginTop = '1.5rem';
-  instructions.style.textAlign = 'center';
-  instructions.innerHTML = `
+    const instructions = document.createElement('div');
+    instructions.style.fontSize = '1.2rem';
+    instructions.style.marginTop = '1.5rem';
+    instructions.style.textAlign = 'center';
+    instructions.innerHTML = `
     Use <b>W A S D</b> to move<br/><br/>
     Press <b>R</b> to reload<br/><br/>
     Press <b>F</b> to toggle flashlight
   `;
 
-  overlay.appendChild(title);
-  overlay.appendChild(instructions);
+    overlay.appendChild(title);
+    overlay.appendChild(instructions);
 
-  overlay.addEventListener('click', () => {
-    overlay.remove();
-    onClick();
-  });
+    overlay.addEventListener('click', () => {
+      overlay.remove();
+      onClick();
+    });
 
-  document.body.appendChild(overlay);
-}
+    document.body.appendChild(overlay);
+  }
 
 
 }
@@ -1503,7 +1487,7 @@ function fadeAudio(audio: HTMLAudioElement, targetVolume: number, duration: numb
   // Ensure audio is always playing and looping
   if (audio.paused) {
     audio.loop = true;
-    audio.play().catch(() => {}); // Ignore play errors (autoplay policy)
+    audio.play().catch(() => { }); // Ignore play errors (autoplay policy)
   }
   const startVolume = audio.volume;
   const startTime = performance.now();
@@ -1529,11 +1513,11 @@ function fadeAllBackgroundAudio(target: number, duration: number = 1000) {
   // Always ensure rain and bg audio are playing and looping
   if (rainAudio && rainAudio.paused) {
     rainAudio.loop = true;
-    rainAudio.play().catch(() => {});
+    rainAudio.play().catch(() => { });
   }
   if (bgAudio && bgAudio.paused) {
     bgAudio.loop = true;
-    bgAudio.play().catch(() => {});
+    bgAudio.play().catch(() => { });
   }
   fadeAudio(rainAudio, 0.2 * target, duration);
   fadeAudio(bgAudio, 0.8 * target, duration);
@@ -1577,97 +1561,13 @@ function playSpeechAudio1() {
 }
 
 function showMissionFailedOverlay() {
-  let overlay = document.getElementById("mission-failed-overlay");
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = "mission-failed-overlay";
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100vw';
-    overlay.style.height = '100vh';
-    overlay.style.background = 'rgba(0,0,0,0.85)';
-    overlay.style.display = 'flex';
-    overlay.style.flexDirection = 'column';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
-    overlay.style.zIndex = '2000';
-    overlay.style.color = '#ff3c3c';
-    overlay.style.fontSize = '3rem';
-    overlay.style.fontFamily = 'monospace';
-    overlay.style.fontWeight = 'bold';
-
-    overlay.innerHTML = `
-      Mission Failed!
-      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" rel="noopener"
-        style="
-          margin-top: 32px;
-          padding: 14px 32px;
-          background: #24292f;
-          color: #fff;
-          border-radius: 8px;
-          font-size: 1.2rem;
-          font-family: monospace;
-          font-weight: bold;
-          text-decoration: none;
-          box-shadow: 0 2px 12px #000a;
-          transition: background 0.2s;
-          display: inline-block;
-        "
-        onmouseover="this.style.background='#57606a'"
-        onmouseout="this.style.background='#24292f'"
-      >⭐ Star this Project on GitHub</a>
-    `;
-    document.body.appendChild(overlay);
-  }
+  document.getElementById("mission-failed-overlay")!.style.display = "block";
   // Unlock the pointer (show mouse)
   if (document.exitPointerLock) document.exitPointerLock();
 }
 
 function showMissionCompleteOverlay() {
-  let overlay = document.getElementById("mission-complete-overlay");
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = "mission-complete-overlay";
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100vw';
-    overlay.style.height = '100vh';
-    overlay.style.background = 'rgba(0,0,0,0.85)';
-    overlay.style.display = 'flex';
-    overlay.style.flexDirection = 'column';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
-    overlay.style.zIndex = '2000';
-    overlay.style.color = '#3cff3c';
-    overlay.style.fontSize = '3rem';
-    overlay.style.fontFamily = 'monospace';
-    overlay.style.fontWeight = 'bold';
-
-    overlay.innerHTML = `
-      Mission Complete!
-      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" rel="noopener"
-        style="
-          margin-top: 32px;
-          padding: 14px 32px;
-          background: #24292f;
-          color: #fff;
-          border-radius: 8px;
-          font-size: 1.2rem;
-          font-family: monospace;
-          font-weight: bold;
-          text-decoration: none;
-          box-shadow: 0 2px 12px #000a;
-          transition: background 0.2s;
-          display: inline-block;
-        "
-        onmouseover="this.style.background='#57606a'"
-        onmouseout="this.style.background='#24292f'"
-      >⭐ Star this Project on GitHub</a>
-    `;
-    document.body.appendChild(overlay);
-  }
+  document.getElementById("mission-complete-overlay")!.style.display = "block";
   // Unlock the pointer (show mouse)
   if (document.exitPointerLock) document.exitPointerLock();
 }
@@ -1697,33 +1597,10 @@ function playSpeechAudio2(onEnd?: () => void) {
   });
 }
 function showSubtitle(text: string, duration: number) {
-  let subtitleBox = document.getElementById('subtitle-box') as HTMLDivElement | null;
-  if (!subtitleBox) {
-    subtitleBox = document.createElement('div');
-    subtitleBox.id = 'subtitle-box';
-    subtitleBox.style.position = 'fixed';
-    subtitleBox.style.bottom = '7%';
-    subtitleBox.style.left = '50%';
-    subtitleBox.style.transform = 'translateX(-50%)';
-    subtitleBox.style.background = 'rgba(30, 40, 30, 0.72)';
-    subtitleBox.style.color = 'rgb(60, 255, 60)';
-    subtitleBox.style.padding = '18px 36px';
-    subtitleBox.style.borderRadius = '12px';
-    subtitleBox.style.fontSize = '1.25rem';
-    subtitleBox.style.fontFamily = 'monospace, monospace, sans-serif';
-    subtitleBox.style.fontWeight = 'bold';
-    subtitleBox.style.letterSpacing = '0.02em';
-    subtitleBox.style.boxShadow = 'rgba(0, 0, 0, 0.667) 0px 4px 24px';
-    subtitleBox.style.zIndex = '1000';
-    subtitleBox.style.textAlign = 'center';
-    subtitleBox.style.pointerEvents = 'none';
-    subtitleBox.style.maxWidth = '80vw';
-    document.body.appendChild(subtitleBox);
-  }
+  let subtitleBox = document.getElementById('subtitle-box') as HTMLDivElement;
   subtitleBox.textContent = text;
   subtitleBox.style.display = 'block';
 
-  // Remove/hide after duration
   setTimeout(() => {
     if (subtitleBox) subtitleBox.style.display = 'none';
   }, duration);
