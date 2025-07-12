@@ -47,12 +47,14 @@ class SceneManager {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(FOV, window.innerWidth / window.innerHeight, NEAR, FAR);
     this.camera.position.copy(INITIAL_POSITION);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', precision: 'lowp' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', precision: 'highp' });
     this.renderer.shadowMap.enabled = true;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, CONFIG.RENDERER.PIXEL_RATIO_MAX));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.8;
     document.getElementById('container')?.appendChild(this.renderer.domElement);
   }
 }
@@ -264,6 +266,10 @@ class WeaponManager {
   private bulletGeometry: THREE.SphereGeometry;
   private bulletMaterial: THREE.MeshBasicMaterial;
   private tempVector = new THREE.Vector3();
+  private shakeOffset = new THREE.Vector3();
+  private shakeIntensity = 100;
+  private shakeStartTime = 0;
+  private shakeDuration = 200;
 
   constructor(private scene: THREE.Scene, private camera: THREE.PerspectiveCamera, private gameState: GameState, private modelManager: ModelManager, private lightingManager: LightingManager) {
     this.bulletGeometry = new THREE.SphereGeometry(0.05, 4, 4);
@@ -275,7 +281,6 @@ class WeaponManager {
     this.modelManager.gunActions.forEach(a => a.stop());
     this.modelManager.gunActions[idx].reset().play();
     this.gameState.currentGunAction = idx;
-
     if (idx === 4) {
       this.gameState.shootTimer = 0.1;
     } else if (idx === 7) {
@@ -289,8 +294,38 @@ class WeaponManager {
     }
   }
 
+  private startCameraShake(): void {
+    this.shakeIntensity = 0.1;
+    this.shakeStartTime = Date.now();
+  }
+
+  private updateCameraShake(): void {
+    if (this.shakeIntensity > 0.001) {
+      const elapsed = Date.now() - this.shakeStartTime;
+      const progress = Math.min(elapsed / this.shakeDuration, 1);
+
+      const intensity = this.shakeIntensity * (1 - progress * progress);
+
+      const previousShake = this.shakeOffset.clone();
+      this.shakeOffset.set(
+        (Math.random() - 0.5) * intensity,
+        0,
+        (Math.random() - 0.5) * intensity
+      );
+
+      this.camera.position.sub(previousShake).add(this.shakeOffset);
+
+      if (progress >= 1) {
+        this.shakeIntensity = 0;
+        this.camera.position.sub(this.shakeOffset);
+        this.shakeOffset.set(0, 0, 0);
+      }
+    }
+  }
+
   public shoot(): void {
     this.playGunAction(4);
+    this.startCameraShake();
     this.gameState.ammo--;
     const bullet = new THREE.Mesh(this.bulletGeometry, this.bulletMaterial);
     bullet.position.copy(this.camera.getWorldPosition(this.tempVector));
@@ -304,9 +339,10 @@ class WeaponManager {
   }
 
   public updateBullets(delta: number): void {
+    this.updateCameraShake();
+
     const speedDelta = delta * CONFIG.BULLET.SPEED;
     const box = new THREE.Box3();
-
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const bullet = this.bullets[i];
       bullet.position.addScaledVector(bullet.userData.velocity, speedDelta);
@@ -590,6 +626,14 @@ class Game {
   private originalZombieCount = CONFIG.ZOMBIE.COUNT;
   private clock = new THREE.Clock();
 
+  private breathingAmplitude = 0.02;
+  private breathingSpeed = 3;
+  private breathingOffset = 0;
+
+  private bobbingAmplitude = 0.08;
+  private bobbingSpeed = 12;
+  private bobbingOffset = 0;
+
   private sceneManager: SceneManager;
   private gameState: GameState;
   private lightingManager: LightingManager;
@@ -672,14 +716,24 @@ class Game {
     if (keysPressed['KeyS']) this.direction.z -= 1;
     if (keysPressed['KeyA']) this.direction.x -= 1;
     if (keysPressed['KeyD']) this.direction.x += 1;
-
     if (this.direction.lengthSq() > 0) {
       this.direction.normalize();
       this.velocity.copy(this.direction).multiplyScalar(CONFIG.MOVEMENT.SPEED * delta);
       this.controls.moveRight(this.velocity.x);
       this.controls.moveForward(this.velocity.z);
-    }
+      // Update bobbing offset based on movement
+      this.bobbingOffset += this.bobbingSpeed * delta;
+      this.sceneManager.camera.position.y = CONFIG.CAMERA.INITIAL_POSITION.y + Math.sin(this.bobbingOffset) * this.bobbingAmplitude;
 
+      // Reset breathing offset when moving
+      this.breathingOffset = 0;
+    } else {
+      // Breathing effect when standing still
+      this.breathingOffset += this.breathingSpeed * delta;
+      this.sceneManager.camera.position.y = CONFIG.CAMERA.INITIAL_POSITION.y + Math.sin(this.breathingOffset) * this.breathingAmplitude;
+      // Reset bobbing when not moving
+      this.bobbingOffset = 0;
+    }
     const pos = this.sceneManager.camera.position;
     pos.x = clamp(pos.x, GAME_BOUNDS.minX, GAME_BOUNDS.maxX);
     pos.z = clamp(pos.z, GAME_BOUNDS.minZ, GAME_BOUNDS.maxZ);
