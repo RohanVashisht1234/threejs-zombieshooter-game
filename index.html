@@ -3,7 +3,9 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>Zombie Strike</title>
+  <title>Zombie Strike: The Ultimate Zombie Survival Game</title>
+  <meta name="description" content="Zombie Strike is an action-packed survival game where you fight off hordes of zombies. Play now and test your skills in this thrilling zombie apocalypse adventure!">
+  <meta name="keywords" content="zombie, zombie games, survival games, action games, shooter games, apocalypse, undead, horror games">
   <style>
     :root,
     html,
@@ -145,6 +147,18 @@
       color: #00f0ff;
     }
 
+    #about {
+      color: #b6faff;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      font-size: 1.1rem;
+      box-shadow: 0 0 10px #00f0ff44;
+      text-align: left;
+      width: 100%;
+      max-width: 700px;
+    }
+
     #loading-screen {
       display: none;
       position: fixed;
@@ -258,9 +272,25 @@
 <body>
   <div id="start-screen">
     <div id="start-content">
-      <div id="title">⚡ ZOMBIE STRIKE ⚡</div>
-      <button id="start-button">Start Game</button>
-      <a id="github-star" href="https://github.com/rohanvashisht1234/threejs-zombieshooter-game" target="_blank">⭐ Star this project on GitHub</a>
+      <h1 id="title">⚡ ZOMBIE STRIKE ⚡</h1>
+      <button id="start-button" aria-label="Start the game">Start Game</button>
+      <a id="github-star" href="https://github.com/rohanvashisht1234/threejs-zombieshooter-game" target="_blank" aria-label="Star this project on GitHub">⭐ Star this project on GitHub</a>
+      <div id="about">
+        <h2>About Zombie Strike</h2>
+        <p>Zombie Strike is one of the most exciting zombie games available online. In this action-packed survival game, you'll face relentless hordes of zombies in a post-apocalyptic world. Your mission is to survive as long as possible by using a variety of weapons and strategic tactics.</p>
+        <h3>Why Play Zombie Strike?</h3>
+        <ul>
+          <li>Experience intense zombie combat like never before</li>
+          <li>Choose from multiple weapons to defeat the undead</li>
+          <li>Complete challenging missions to test your skills</li>
+          <li>Enjoy stunning 3D graphics that bring the apocalypse to life</li>
+          <li>Immerse yourself in the game with high-quality sound effects and music</li>
+        </ul>
+        <h3>How to Play</h3>
+        <p>Controls are simple: use WASD to move, mouse to aim and shoot, R to reload, and E to interact with objects. Your goal is to survive the zombie onslaught and complete your missions. Are you ready to join the fight against the undead?</p>
+        <h3>The Story</h3>
+        <p>In the year 2025, a mysterious virus outbreak turned most of humanity into flesh-eating zombies. You are one of the few survivors, holed up in an abandoned military base. With limited supplies and ammunition, you must venture out to scavenge for resources and find a way to stop the zombie apocalypse.</p>
+      </div>
       <div id="credits">
         <ul>
           <li><strong>Rohan Vashisht</strong> — Programmer, map designer, game designer, voice actor, and the one who brought everything to life.</li>
