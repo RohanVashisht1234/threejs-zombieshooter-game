@@ -4,8 +4,10 @@
 <head>
   <meta charset="utf-8" />
   <title>Zombie Strike: The Ultimate Zombie Survival Game</title>
-  <meta name="description" content="Zombie Strike is an action-packed survival game where you fight off hordes of zombies. Play now and test your skills in this thrilling zombie apocalypse adventure!">
-  <meta name="keywords" content="zombie, zombie games, survival games, action games, shooter games, apocalypse, undead, horror games">
+  <meta name="description"
+    content="Zombie Strike is an action-packed survival game where you fight off hordes of zombies. Play now and test your skills in this thrilling zombie apocalypse adventure!">
+  <meta name="keywords"
+    content="zombie, zombie games, survival games, action games, shooter games, apocalypse, undead, horror games">
   <style>
     :root,
     html,
@@ -266,6 +268,26 @@
         opacity: 1;
       }
     }
+
+    #notification {
+      position: fixed;
+      bottom: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30, 40, 30, 0.72);
+      color: #3cff3c;
+      padding: 1rem 2rem;
+      border-radius: 12px;
+      font-size: 1.25rem;
+      font-family: monospace;
+      font-weight: bold;
+      letter-spacing: 0.02em;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.67);
+      z-index: 1000;
+      text-align: center;
+      display: none;
+      /* Initially hidden */
+    }
   </style>
 </head>
 
@@ -274,10 +296,14 @@
     <div id="start-content">
       <h1 id="title">⚡ ZOMBIE STRIKE ⚡</h1>
       <button id="start-button" aria-label="Start the game">Start Game</button>
-      <a id="github-star" href="https://github.com/rohanvashisht1234/threejs-zombieshooter-game" target="_blank" aria-label="Star this project on GitHub">⭐ Star this project on GitHub</a>
+      <div id="notification">Press ESC to exit fullscreen</div>
+      <a id="github-star" href="https://github.com/rohanvashisht1234/threejs-zombieshooter-game" target="_blank"
+        aria-label="Star this project on GitHub">⭐ Star this project on GitHub</a>
       <div id="about">
         <h2>About Zombie Strike</h2>
-        <p>Zombie Strike is one of the most exciting zombie games available online. In this action-packed survival game, you'll face relentless hordes of zombies in a post-apocalyptic world. Your mission is to survive as long as possible by using a variety of weapons and strategic tactics.</p>
+        <p>Zombie Strike is one of the most exciting zombie games available online. In this action-packed survival game,
+          you'll face relentless hordes of zombies in a post-apocalyptic world. Your mission is to survive as long as
+          possible by using a variety of weapons and strategic tactics.</p>
         <h3>Why Play Zombie Strike?</h3>
         <ul>
           <li>Experience intense zombie combat like never before</li>
@@ -287,14 +313,20 @@
           <li>Immerse yourself in the game with high-quality sound effects and music</li>
         </ul>
         <h3>How to Play</h3>
-        <p>Controls are simple: use WASD to move, mouse to aim and shoot, R to reload, and E to interact with objects. Your goal is to survive the zombie onslaught and complete your missions. Are you ready to join the fight against the undead?</p>
+        <p>Controls are simple: use WASD to move, mouse to aim and shoot, R to reload, and E to interact with objects.
+          Your goal is to survive the zombie onslaught and complete your missions. Are you ready to join the fight
+          against the undead?</p>
         <h3>The Story</h3>
-        <p>In the year 2025, a mysterious virus outbreak turned most of humanity into flesh-eating zombies. You are one of the few survivors, holed up in an abandoned military base. With limited supplies and ammunition, you must venture out to scavenge for resources and find a way to stop the zombie apocalypse.</p>
+        <p>In the year 2025, a mysterious virus outbreak turned most of humanity into flesh-eating zombies. You are one
+          of the few survivors, holed up in an abandoned military base. With limited supplies and ammunition, you must
+          venture out to scavenge for resources and find a way to stop the zombie apocalypse.</p>
       </div>
       <div id="credits">
         <ul>
-          <li><strong>Rohan Vashisht</strong> — Programmer, map designer, game designer, voice actor, and the one who brought everything to life.</li>
-          <li><strong>Alok Nair</strong> — Music & sound manager, asset researcher, gameplay tester, and gave invaluable feedback on various fixes.</li>
+          <li><strong>Rohan Vashisht</strong> — Programmer, map designer, game designer, voice actor, and the one who
+            brought everything to life.</li>
+          <li><strong>Alok Nair</strong> — Music & sound manager, asset researcher, gameplay tester, and gave invaluable
+            feedback on various fixes.</li>
         </ul>
         <div style="margin-top:1.5rem;">
           <strong>🔊 Credits</strong>
@@ -303,16 +335,30 @@
             <li>🎧 <strong>Sound Effects:</strong> Pixabay – pixabay.com</li>
             <li><strong>3D Assets:</strong>
               <ul>
-                <li><a href="https://sketchfab.com/3d-models/zombie-hazmat-49b3b4307f6a4d2386fdb02354158d04#download" target="_blank">Zombie Hazmat</a></li>
-                <li><a href="https://sketchfab.com/3d-models/fps-ak-74m-animations-94be8385c402474cacd39bc096c6ca14" target="_blank">FPS AK-74M + Animations</a></li>
-                <li><a href="https://sketchfab.com/3d-models/fence-0adbc93269c94b70b99d0627a3ee54f5" target="_blank">Fence</a></li>
-                <li><a href="https://sketchfab.com/3d-models/wall-door-19mb-cac51dfd82784736a726bba118e86de9" target="_blank">Wall + Door</a></li>
-                <li><a href="https://sketchfab.com/3d-models/sand-bags-e02685e0047948aabc75227cb1962d05#download" target="_blank">Sandbags</a></li>
-                <li><a href="https://sketchfab.com/3d-models/prototipo-speciale-police-95-low-poly-model-63aa215521334cef9c4d8c4c391252ad" target="_blank">Police Car (Low Poly)</a></li>
-                <li><a href="https://sketchfab.com/3d-models/crashed-abandoned-car-game-ready-66ef51a84c9843dda53bf0b4b9020011#download" target="_blank">Crashed Abandoned Car</a></li>
-                <li><a href="https://sketchfab.com/3d-models/electric-box-c7bba1e774d94e67b410e4c9fdfdee34#download" target="_blank">Electric Box</a></li>
-                <li><a href="https://sketchfab.com/3d-models/wwii-air-trafic-control-tower-9e7f035ed7f4449593ad1bebe6ac71b1" target="_blank">WWII Air Traffic Control Tower</a></li>
-                <li><a href="https://sketchfab.com/3d-models/psx-style-brick-wall-80e53aac4eaa4aa99750f2429a4fe9f2#download" target="_blank">PSX Style Brick Wall</a></li>
+                <li><a href="https://sketchfab.com/3d-models/zombie-hazmat-49b3b4307f6a4d2386fdb02354158d04#download"
+                    target="_blank">Zombie Hazmat</a></li>
+                <li><a href="https://sketchfab.com/3d-models/fps-ak-74m-animations-94be8385c402474cacd39bc096c6ca14"
+                    target="_blank">FPS AK-74M + Animations</a></li>
+                <li><a href="https://sketchfab.com/3d-models/fence-0adbc93269c94b70b99d0627a3ee54f5"
+                    target="_blank">Fence</a></li>
+                <li><a href="https://sketchfab.com/3d-models/wall-door-19mb-cac51dfd82784736a726bba118e86de9"
+                    target="_blank">Wall + Door</a></li>
+                <li><a href="https://sketchfab.com/3d-models/sand-bags-e02685e0047948aabc75227cb1962d05#download"
+                    target="_blank">Sandbags</a></li>
+                <li><a
+                    href="https://sketchfab.com/3d-models/prototipo-speciale-police-95-low-poly-model-63aa215521334cef9c4d8c4c391252ad"
+                    target="_blank">Police Car (Low Poly)</a></li>
+                <li><a
+                    href="https://sketchfab.com/3d-models/crashed-abandoned-car-game-ready-66ef51a84c9843dda53bf0b4b9020011#download"
+                    target="_blank">Crashed Abandoned Car</a></li>
+                <li><a href="https://sketchfab.com/3d-models/electric-box-c7bba1e774d94e67b410e4c9fdfdee34#download"
+                    target="_blank">Electric Box</a></li>
+                <li><a
+                    href="https://sketchfab.com/3d-models/wwii-air-trafic-control-tower-9e7f035ed7f4449593ad1bebe6ac71b1"
+                    target="_blank">WWII Air Traffic Control Tower</a></li>
+                <li><a
+                    href="https://sketchfab.com/3d-models/psx-style-brick-wall-80e53aac4eaa4aa99750f2429a4fe9f2#download"
+                    target="_blank">PSX Style Brick Wall</a></li>
               </ul>
             </li>
           </ul>
@@ -334,18 +380,44 @@
   <div id="mission-complete-overlay" class="mission-overlay">
     <div class="mission-content">
       <div>Mission Complete!</div>
-      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" class="mission-link">⭐ Star this Project on GitHub</a>
+      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" class="mission-link">⭐
+        Star this Project on GitHub</a>
     </div>
   </div>
 
   <div id="mission-failed-overlay" class="mission-overlay">
     <div class="mission-content">
       <div>Mission Failed!</div>
-      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" class="mission-link">⭐ Star this Project on GitHub</a>
+      <a href="https://github.com/RohanVashisht1234/threejs-zombieshooter-game" target="_blank" class="mission-link">⭐
+        Star this Project on GitHub</a>
     </div>
   </div>
 
   <script type="module" src="/main.ts"></script>
+  <script>
+    const startButton = document.getElementById('start-button');
+    const notification = document.getElementById('notification');
+    startButton.addEventListener('click', () => {
+      // Request fullscreen
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+      } else if (document.documentElement.mozRequestFullScreen) { // Firefox
+        document.documentElement.mozRequestFullScreen();
+      } else if (document.documentElement.webkitRequestFullscreen) { // Chrome, Safari and Opera
+        document.documentElement.webkitRequestFullscreen();
+      } else if (document.documentElement.msRequestFullscreen) { // IE/Edge
+        document.documentElement.msRequestFullscreen();
+      }
+      // Show notification
+      notification.style.display = 'block';
+    });
+    // Optional: Hide notification when exiting fullscreen
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) {
+        notification.style.display = 'none';
+      }
+    });
+  </script>
 </body>
 
 </html>
