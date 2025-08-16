@@ -327,6 +327,13 @@ class WeaponManager {
     this.playGunAction(4);
     this.startCameraShake();
     this.gameState.ammo--;
+
+    // 🔥 auto reload when ammo is empty
+    if (this.gameState.ammo <= 0 && this.canReload()) {
+      this.playGunAction(7);
+      return;
+    }
+
     const bullet = new THREE.Mesh(this.bulletGeometry, this.bulletMaterial);
     bullet.position.copy(this.camera.getWorldPosition(this.tempVector));
     const dir = new THREE.Vector3();
@@ -338,8 +345,13 @@ class WeaponManager {
     playShotSound();
   }
 
+
   public updateBullets(delta: number): void {
     this.updateCameraShake();
+
+    if (this.gameState.isShooting && this.gameState.ammo <= 0 && this.canReload()) {
+      this.playGunAction(7);
+    }
 
     const speedDelta = delta * CONFIG.BULLET.SPEED;
     const box = new THREE.Box3();
